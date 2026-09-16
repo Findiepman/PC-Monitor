@@ -1,0 +1,11 @@
+# /etc/cloudflared/config.yml
+# Create the tunnel and DNS record once:
+#   cloudflared tunnel create dashd
+#   cloudflared tunnel route dns dashd dash.findiepman.dev
+tunnel: <TUNNEL-UUID>
+credentials-file: /etc/cloudflared/<TUNNEL-UUID>.json
+
+ingress:
+  - hostname: dash.findiepman.dev
+    service: http://127.0.0.1:7070
+  - service: http_status:404

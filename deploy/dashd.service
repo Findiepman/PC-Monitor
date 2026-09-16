@@ -1,0 +1,35 @@
+# /etc/systemd/system/dashd.service
+[Unit]
+Description=dashd server dashboard
+# Start after the things it watches so the first poll after boot isn't all
+# errors. These are ordering hints only: dashd still starts if one is missing.
+After=network-online.target time-sync.target docker.service wings.service
+Wants=network-online.target
+
+[Service]
+User=dashd
+Group=dashd
+# docker: container control. systemd-journal: reading unit logs.
+SupplementaryGroups=docker systemd-journal
+ExecStart=/usr/local/bin/dashd serve -config /etc/dashd/config.yaml
+# Secrets such as DASHD_PTERODACTYL_KEY=ptlc_... (chmod 600, owned by root)
+EnvironmentFile=-/etc/dashd/env
+WorkingDirectory=/var/lib/dashd
+StateDirectory=dashd
+Restart=always
+RestartSec=3
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

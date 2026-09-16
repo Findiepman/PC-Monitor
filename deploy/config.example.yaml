@@ -1,0 +1,44 @@
+# /etc/dashd/config.yaml
+# Generate the auth block with `dashd init -o /etc/dashd/config.yaml`, then
+# fill in the providers below. Remove a provider block to disable it.
+
+listen: 127.0.0.1:7070   # keep on loopback; cloudflared connects locally
+# hostname: findiepman-srv  # name in the top bar, defaults to the machine name
+
+auth:
+  username: fin
+  password_hash: "$argon2id$v=19$..."   # from `dashd init` or `dashd hash-password`
+  totp_secret: env:DASHD_TOTP_SECRET    # a literal value works too
+  # How long a sign-in lasts. Sessions are saved to disk, so reboots don't
+  # sign you out; only this expiry does.
+  session_ttl: 168h
+  sessions_path: /var/lib/dashd/sessions.json
+
+audit:
+  path: /var/lib/dashd/audit.jsonl
+
+providers:
+  docker:
+    label: Docker
+    socket: /var/run/docker.sock
+    # Wings game server containers are hidden by default because the
+    # pterodactyl provider shows them with proper names.
+    exclude_labels: ["Service=Pterodactyl"]
+    exclude: []
+
+  systemd:
+    label: Services
+    # Allowlist. dashd can't see or touch any other unit. Mirror this list
+    # in /etc/polkit-1/rules.d/50-dashd.rules.
+    units:
+      - wings
+      - playit
+      - pteroq
+      - cloudflared
+
+  pterodactyl:
+    label: Pterodactyl
+    url: https://panel.findiepman.dev
+    # Client API key from Account > API Credentials (starts with ptlc_).
+    api_key: env:DASHD_PTERODACTYL_KEY
+    all_servers: false   # true lists every server, needs a root admin key

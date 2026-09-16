@@ -1,0 +1,24 @@
+// /etc/polkit-1/rules.d/50-dashd.rules
+// Lets the dashd user control only the units listed here, only with these
+// verbs. Keep it in sync with providers.systemd.units in config.yaml.
+// Needs polkit 0.106 or newer (Debian 12, Ubuntu 23.04 and later).
+
+polkit.addRule(function (action, subject) {
+  if (action.id !== "org.freedesktop.systemd1.manage-units" || subject.user !== "dashd") {
+    return;
+  }
+
+  var allowed = {
+    "wings.service": ["start", "stop", "restart", "kill"],
+    "playit.service": ["start", "stop", "restart", "kill"],
+    "pteroq.service": ["start", "stop", "restart", "kill"],
+    // Stopping the tunnel would cut off the dashboard itself, so only
+    // restarts are allowed.
+    "cloudflared.service": ["restart"],
+  };
+
+  var verbs = allowed[action.lookup("unit")];
+  if (verbs && verbs.indexOf(action.lookup("verb")) !== -1) {
+    return polkit.Result.YES;
+  }
+});

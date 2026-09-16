@@ -1,0 +1,149 @@
+:root {
+  /* Rack bay and faceplates */
+  --bay: #161a1f;
+  --plate: #1f252c;
+  --plate-hi: #262d35;
+  --rule: #2e3640;
+  --ink: #d5dce3;
+  --dim: #7d8894;
+  /* Live signal: traces, focus, selection */
+  --trace: #5fd3c4;
+  --trace-soft: rgb(95 211 196 / 0.12);
+  --trace-grid: rgb(125 136 148 / 0.14);
+  /* Status LEDs. Nothing else uses these. */
+  --ok: #7cc48a;
+  --warn: #e3b55b;
+  --fail: #ee6a5f;
+  --idle: #56606b;
+  --fail-soft: rgb(238 106 95 / 0.1);
+
+  --mono: 'Martian Mono Variable', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --sans: 'Instrument Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --fs-xs: 12px;
+  --fs-s: 13px;
+  --fs-m: 15px;
+  --fs-l: 20px;
+  --fs-xl: 32px;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bay: #e4e8ec;
+    --plate: #f4f6f8;
+    --plate-hi: #ffffff;
+    --rule: #c8cfd6;
+    --ink: #1b232b;
+    --dim: #5a6571;
+    --trace: #0b8578;
+    --trace-soft: rgb(11 133 120 / 0.1);
+    --trace-grid: rgb(90 101 113 / 0.16);
+    --ok: #2e8544;
+    --warn: #a36a08;
+    --fail: #c43a2f;
+    --idle: #8d97a1;
+    --fail-soft: rgb(196 58 47 / 0.08);
+    color-scheme: light;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bay);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--fs-m);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--trace);
+  outline-offset: 2px;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-stretch: 87.5%;
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+kbd {
+  font-family: var(--mono);
+  font-stretch: 87.5%;
+  font-size: 11px;
+  padding: 1px 5px;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--dim);
+  background: var(--bay);
+}
+
+/* Quiet text button used across the chrome. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--plate);
+  font-size: var(--fs-s);
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--plate-hi);
+}
+
+.btn[aria-pressed='true'] {
+  border-color: var(--trace);
+  color: var(--trace);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

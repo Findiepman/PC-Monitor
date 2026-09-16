@@ -1,0 +1,46 @@
+# --- Secrets and server state: never commit these ---
+# Real configs hold the password hash and TOTP secret.
+config.yaml
+config.*.yaml
+!deploy/config.example.yaml
+# Environment files with API keys (DASHD_PTERODACTYL_KEY etc.)
+.env
+.env.*
+*.env
+/deploy/env
+# Runtime state written by dashd
+sessions.json
+.sessions-*
+audit.jsonl
+*.jsonl
+# Cloudflare tunnel credentials
+*.pem
+cert.json
+/deploy/*-*-*-*-*.json
+
+# --- Local development ---
+# Mock config, dev login and audit log
+/dev/
+
+# --- Build output ---
+/bin/
+*.exe
+/agent/dashd
+# Built frontend; the placeholder must stay so `go build` works on a fresh clone
+agent/internal/webui/dist/*
+!agent/internal/webui/dist/.gitkeep
+
+# --- Dependencies and caches ---
+web/node_modules/
+web/.vite/
+web/.svelte-kit/
+*.tsbuildinfo
+coverage.out
+
+# --- Editors and OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
