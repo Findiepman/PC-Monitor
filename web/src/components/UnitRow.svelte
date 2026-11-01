@@ -47,217 +47,220 @@
   };
 </script>
 
-<li class="unit" class:selected class:problem={t === 'fail'} aria-current={selected ? 'true' : undefined}>
-  <button class="pick" onclick={onselect} aria-label="Show logs for {unit.name}, {stateLabel(unit)}">
-    <Led tone={t} pulse={busy} />
-    <span class="names">
+<li
+  class="unit ucard"
+  class:selected
+  class:problem={t === 'fail'}
+  class:stopped={unit.state === 'stopped'}
+  aria-current={selected ? 'true' : undefined}
+>
+  <div class="uh">
+    <button class="pick" onclick={onselect} aria-label="Show logs for {unit.name}, {stateLabel(unit)}">
       <span class="name">{unit.name}</span>
-      <span class="detail mono">{detail}</span>
+    </button>
+    <span class="state pill {busy ? 'warn' : t === 'fail' ? 'fail' : t === 'ok' ? 'ok' : t === 'warn' ? 'warn' : 'idle'}">
+      {pending ? progressive[pending] : stateLabel(unit)}
     </span>
-  </button>
+  </div>
 
-  <span class="state" class:bad={t === 'fail'}>
-    {pending ? progressive[pending] : stateLabel(unit)}
-  </span>
-  <span class="num mono cpu" title="CPU, 100% is one core">{pct(unit.cpu)}</span>
-  <span class="num mono mem" title="Memory">{memText}</span>
-  <span class="num mono up" title="Uptime">{unit.state === 'running' ? duration(unit.uptime) : '–'}</span>
+  <div class="umeta">
+    <span class="detail">{detail}</span>
+    <span title="Uptime">up {unit.state === 'running' ? duration(unit.uptime) : '–'}</span>
+  </div>
 
-  <span class="actions">
+  <div class="umet">
+    <span>CPU</span>
+    <div class="bar" title="CPU, 100% is one core"><i style:width="{unit.cpu == null ? 0 : Math.min(100, Math.max(0, unit.cpu))}%"></i></div>
+    <span>Mem</span>
+    <div class="bar" title="Memory{unit.memLimit ? '' : ' (no limit set)'}">
+      <i style:width="{unit.mem != null && unit.memLimit ? Math.min(100, (unit.mem / unit.memLimit) * 100) : 0}%"></i>
+    </div>
+  </div>
+  <div class="umeta nums">
+    <span class="mono">{pct(unit.cpu)} cpu</span>
+    <span class="mono">{memText}</span>
+  </div>
+
+  {#if unit.meta?.error}
+    <span class="uerr mono" role="alert">{unit.meta.error}</span>
+  {/if}
+
+  <div class="uacts">
     {#if armed}
       <span class="armed" role="status">Press {armed === 'restart' ? 'r' : 's'} again to {armed}</span>
     {:else}
+      <!-- Every action needs a deliberate hold, so a stray tap never starts, restarts or stops anything. -->
       {#if can('start')}
-        <button class="act" disabled={busy} title="Start {unit.name}" aria-label="Start {unit.name}" onclick={() => onaction('start')}>
-          <Icon name="start" />
-        </button>
+        <HoldButton label="Start {unit.name}" tone="mint" disabled={busy} onconfirm={() => onaction('start')}>
+          <Icon name="start" size={16} /><span class="lbl">Start</span>
+        </HoldButton>
       {/if}
       {#if can('restart')}
-        <HoldButton label="Restart {unit.name}" disabled={busy} onconfirm={() => onaction('restart')}>
-          <Icon name="restart" />
+        <HoldButton label="Restart {unit.name}" tone="lemon" disabled={busy} onconfirm={() => onaction('restart')}>
+          <Icon name="restart" size={16} /><span class="lbl">Restart</span>
         </HoldButton>
       {/if}
       {#if can('stop')}
-        <HoldButton label="Stop {unit.name}" danger disabled={busy} onconfirm={() => onaction('stop')}>
-          <Icon name="stop" />
+        <HoldButton label="Stop {unit.name}" tone="tomato" danger disabled={busy} onconfirm={() => onaction('stop')}>
+          <Icon name="stop" size={16} /><span class="lbl">Stop</span>
         </HoldButton>
       {/if}
     {/if}
-  </span>
-
-  {#if unit.meta?.error}
-    <span class="error mono">{unit.meta.error}</span>
-  {/if}
+  </div>
 </li>
 
 <style>
-  .unit {
+  .ucard {
+    position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 84px 52px 116px 58px 100px;
+    gap: 8px;
+    min-width: 0;
+    padding: 12px;
+    border: 3px solid var(--line);
+    border-radius: 16px;
+    background: var(--paper);
+    color: var(--fg);
+    box-shadow: 3px 3px 0 var(--line);
+    transition:
+      transform 0.15s cubic-bezier(0.3, 1.7, 0.5, 1),
+      box-shadow 0.15s,
+      background 0.2s;
+  }
+
+  .selected {
+    background: var(--lemon);
+    color: #111;
+    --fg: #111;
+    --line: #111;
+    --sub: rgb(17 17 17 / 0.72);
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 var(--line);
+  }
+
+  .uh {
+    display: flex;
     align-items: center;
-    column-gap: 8px;
-    min-height: 48px;
-    padding: 0 8px 0 0;
-    border-bottom: 1px solid var(--rule);
-    background: var(--plate);
-    box-shadow: inset 2px 0 0 transparent;
-  }
-
-  .unit:hover {
-    background: var(--plate-hi);
-  }
-
-  .selected,
-  .selected:hover {
-    background: var(--plate-hi);
-    box-shadow: inset 2px 0 0 var(--trace);
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
   }
 
   .pick {
-    display: flex;
-    align-items: center;
-    gap: 12px;
     min-width: 0;
-    height: 100%;
-    min-height: 48px;
-    padding: 6px 0 6px 16px;
+    min-height: 44px;
+    padding: 0;
     border: 0;
+    border-radius: 6px;
     background: none;
+    color: inherit;
     text-align: left;
   }
 
   .pick:focus-visible {
-    outline-offset: -2px;
-  }
-
-  .names {
-    display: grid;
-    min-width: 0;
+    outline-offset: 2px;
   }
 
   .name {
-    font-size: var(--fs-m);
-    font-weight: 500;
+    display: block;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .detail {
-    font-size: 11px;
-    color: var(--dim);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .stopped .name {
+    opacity: 0.75;
   }
 
   .state {
-    font-size: var(--fs-s);
-    color: var(--dim);
+    flex: none;
+    max-width: 55%;
+    min-height: 26px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .state.bad {
-    color: var(--fail);
-  }
-
-  .num {
-    font-size: var(--fs-xs);
-    text-align: right;
-    white-space: nowrap;
-  }
-
-  .actions {
-    position: relative;
+  .umeta {
     display: flex;
-    justify-content: flex-end;
-    gap: 2px;
-    min-height: 30px;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--sub);
   }
 
-  .act {
-    display: inline-grid;
-    place-items: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--dim);
+  .detail {
+    min-width: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-wrap: anywhere;
   }
 
-  .act:hover:not(:disabled) {
-    color: var(--ink);
-    border-color: var(--rule);
+  .nums span {
+    font-size: 12px;
   }
 
-  .act:disabled {
-    opacity: 0.35;
-    cursor: default;
+  .umet {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 3px 8px;
+    align-items: center;
+    font-size: 12.5px;
+    font-weight: 700;
+  }
+
+  .bar {
+    height: 12px;
+    border: 2.5px solid var(--line);
+    border-radius: 999px;
+    background: rgb(128 128 128 / 0.25);
+    overflow: hidden;
+  }
+
+  .bar i {
+    display: block;
+    height: 100%;
+    background: var(--fg);
+    border-radius: 999px 0 0 999px;
+    transition: width 0.6s cubic-bezier(0.3, 1.4, 0.5, 1);
+  }
+
+  .uerr {
+    padding: 4px 8px;
+    border: 2.5px solid #111;
+    border-radius: 10px;
+    background: var(--tomato);
+    color: #111;
+    font-size: 12px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .uacts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 40px;
   }
 
   .armed {
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    padding: 4px 8px;
-    border: 1px solid var(--warn);
-    border-radius: 5px;
-    background: var(--plate-hi);
-    font-size: var(--fs-xs);
-    color: var(--warn);
-    white-space: nowrap;
+    padding: 6px 10px;
+    border: 3px solid #111;
+    border-radius: 12px;
+    background: var(--lemon);
+    box-shadow: 3px 3px 0 #111;
+    color: #111;
+    font-size: var(--fs-s);
+    font-weight: 700;
   }
 
-  .error {
-    grid-column: 1 / -1;
-    padding: 0 16px 8px 36px;
-    font-size: 11px;
-    color: var(--fail);
-  }
-
-  @media (max-width: 1180px) {
-    .unit {
-      grid-template-columns: minmax(0, 1fr) 76px 48px 72px 96px;
-    }
-
-    .up {
-      display: none;
-    }
-
-    .mem {
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-  }
-
-  @media (max-width: 560px) {
-    .unit {
-      grid-template-columns: minmax(0, 1fr) auto;
-      grid-template-rows: auto auto;
-      row-gap: 0;
-    }
-
-    .pick {
-      grid-row: 1 / 3;
-    }
-
-    .state {
-      grid-column: 2;
-      text-align: right;
-      padding-top: 8px;
-    }
-
-    .cpu,
-    .mem,
-    .up {
-      display: none;
-    }
-
-    .actions {
-      grid-column: 2;
-      padding-bottom: 6px;
+  @media (prefers-reduced-motion: reduce) {
+    .ucard,
+    .bar i {
+      transition: none;
     }
   }
 </style>

@@ -19,7 +19,8 @@
 
   let meta = $state<Meta>({ hostname: '', providers: [] });
   let selectedId = $state<string | undefined>(readSelected());
-  let tab = $state<'logs' | 'activity'>('logs');
+  let metaState = $state<'loading' | 'ok' | 'failed'>('loading');
+  let pfilter = $state('all');
   let sheetOpen = $state(false);
   let paletteOpen = $state(false);
   let pending = $state<Record<string, Action>>({});
@@ -30,6 +31,8 @@
   // Units in the order they appear on screen, grouped by provider.
   let ordered = $derived(meta.providers.flatMap((p) => live.units.filter((u) => u.provider === p.name)));
   let selected = $derived(ordered.find((u) => u.id === selectedId));
+  // j and k only walk the units the provider filter leaves on screen.
+  let onscreen = $derived(pfilter === 'all' ? ordered : ordered.filter((u) => u.provider === pfilter));
 
   function readSelected() {
     try {
@@ -59,10 +62,16 @@
 
   onMount(() => {
     live.connect();
-    api.meta().then((m) => (meta = m), () => {});
+    api.meta().then(
+      (m) => {
+        meta = m;
+        metaState = 'ok';
+      },
+      () => (metaState = 'failed'),
+    );
     api.audit().then((a) => live.setAudit(a), () => {});
 
-    const mq = matchMedia('(max-width: 899px)');
+    const mq = matchMedia('(max-width: 560px)');
     narrow = mq.matches;
     const onMq = () => (narrow = mq.matches);
     mq.addEventListener('change', onMq);
@@ -74,9 +83,20 @@
 
   function select(u: Unit, openSheet = true) {
     selectedId = u.id;
-    tab = 'logs';
     armed = null;
     if (narrow && openSheet) sheetOpen = true;
+  }
+
+  // From the palette or the l key: select, then bring the logs tile into view.
+  function showLogs(u: Unit) {
+    select(u);
+    if (narrow) return;
+    tick().then(() =>
+      document.querySelector('.t-logs')?.scrollIntoView({
+        block: 'start',
+        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      }),
+    );
   }
 
   async function run(u: Unit, action: Action) {
@@ -107,7 +127,7 @@
 
   function arm(action: Action) {
     const u = selected;
-    if (!u || !u.actions.includes(action)) return;
+    if (!u || !onscreen.some((x) => x.id === u.id) || !u.actions.includes(action)) return;
     if (armed?.id === u.id && armed.action === action) {
       run(u, action);
       return;
@@ -118,9 +138,9 @@
   }
 
   function move(delta: number) {
-    if (!ordered.length) return;
-    const i = ordered.findIndex((u) => u.id === selectedId);
-    const next = ordered[Math.max(0, Math.min(ordered.length - 1, i + delta))];
+    if (!onscreen.length) return;
+    const i = onscreen.findIndex((u) => u.id === selectedId);
+    const next = onscreen[Math.max(0, Math.min(onscreen.length - 1, i + delta))];
     select(next, false);
     tick().then(() =>
       document.querySelector('.unit[aria-current="true"]')?.scrollIntoView({ block: 'nearest' }),
@@ -151,11 +171,10 @@
         arm('stop');
         break;
       case 'l':
-        if (selected) select(selected);
+        if (selected && onscreen.some((x) => x.id === selected.id)) showLogs(selected);
         break;
       case '/':
         e.preventDefault();
-        tab = 'logs';
         if (narrow && selected) sheetOpen = true;
         tick().then(() => filterInput?.focus());
         break;
@@ -171,39 +190,34 @@
 
 <div class="console">
   <TopBar hostname={meta.hostname} onpalette={() => (paletteOpen = true)} onsignout={signOut} />
-  <HostTrace />
 
-  <main class="split">
-    <div class="left">
-      <Rack
-        providers={meta.providers}
-        {selectedId}
-        {pending}
-        {armed}
-        onselect={(u) => select(u)}
-        onaction={run}
-      />
-    </div>
+  <main class="bento">
+    <HostTrace />
+
+    <Rack
+      providers={meta.providers}
+      {metaState}
+      {selectedId}
+      {pending}
+      {armed}
+      bind:filter={pfilter}
+      onselect={(u) => select(u)}
+      onaction={run}
+    />
+
+    <Activity />
 
     {#if !narrow}
-      <div class="right">
-        <div class="tabs" role="tablist" aria-label="Detail view">
-          <button role="tab" aria-selected={tab === 'logs'} onclick={() => (tab = 'logs')}>Logs</button>
-          <button role="tab" aria-selected={tab === 'activity'} onclick={() => (tab = 'activity')}>
-            Activity
-            {#if live.audit.length}<span class="mono count">{live.audit.length}</span>{/if}
-          </button>
-        </div>
-        {#if tab === 'logs'}
-          <LogPane unit={selected} bind:filterInput />
-        {:else}
-          <Activity />
-        {/if}
-      </div>
+      <LogPane unit={selected} bind:filterInput />
     {:else}
-      <section class="mobile-activity">
-        <h2>Activity</h2>
-        <Activity />
+      <section class="tile tile-lilac t-logs" aria-labelledby="h-logs">
+        <header class="th"><h2 id="h-logs">Logs</h2></header>
+        {#if selected}
+          <p class="sub"><b>{selected.name}</b> is selected.</p>
+          <button class="btn" onclick={() => (sheetOpen = true)}>Open logs</button>
+        {:else}
+          <p class="sub">Pick a service to follow its logs.</p>
+        {/if}
       </section>
       {#if sheetOpen && selected}
         <LogPane unit={selected} sheet onclose={() => (sheetOpen = false)} bind:filterInput />
@@ -214,7 +228,7 @@
 
 <Palette
   bind:open={paletteOpen}
-  onlogs={(u) => select(u)}
+  onlogs={(u) => showLogs(u)}
   onaction={run}
   onsignout={signOut}
 />
@@ -222,90 +236,15 @@
 
 <style>
   .console {
-    display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr);
-    height: 100dvh;
+    max-width: 1360px;
+    margin: 0 auto;
+    /* room on the right and bottom for the hard shadows */
+    padding: 16px 22px 40px 16px;
   }
 
-  .split {
-    display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-    min-height: 0;
-  }
-
-  .left {
-    overflow: auto;
-    min-height: 0;
-    border-right: 1px solid var(--rule);
-  }
-
-  .right {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    min-height: 0;
-  }
-
-  .tabs {
-    display: flex;
-    gap: 4px;
-    padding: 0 12px;
-    border-bottom: 1px solid var(--rule);
-    background: var(--plate);
-  }
-
-  .tabs button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 40px;
-    padding: 0 8px;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    background: none;
-    color: var(--dim);
-    font-size: var(--fs-s);
-    font-weight: 500;
-  }
-
-  .tabs button[aria-selected='true'] {
-    color: var(--ink);
-    border-bottom-color: var(--trace);
-  }
-
-  .tabs button:focus-visible {
-    outline-offset: -2px;
-  }
-
-  .count {
-    font-size: 11px;
-    color: var(--dim);
-  }
-
-  .mobile-activity h2 {
-    margin: 0;
-    padding: 20px 16px 10px;
-    font-size: var(--fs-l);
-    font-weight: 600;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  @media (max-width: 899px) {
+  @media (max-width: 560px) {
     .console {
-      display: block;
-      height: auto;
-    }
-
-    .split {
-      display: block;
-    }
-
-    .left {
-      overflow: visible;
-      border-right: 0;
-    }
-
-    .mobile-activity {
-      padding-bottom: 80px;
+      padding: 12px 17px 32px 12px;
     }
   }
 </style>

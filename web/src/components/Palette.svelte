@@ -25,6 +25,9 @@
   let query = $state('');
   let active = $state(0);
   let confirming = $state<string | null>(null);
+  let armedAt = 0;
+  // Touch devices say "Tap", keyboards/mice say "Press".
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
   let commands = $derived.by<Command[]>(() => {
     const out: Command[] = [];
@@ -35,7 +38,8 @@
           key: `${u.id}:${a}`,
           label: `${capitalize(a)} ${u.name}`,
           unit: u,
-          destructive: a !== 'start',
+          // Every unit action, start included, needs a second press so a stray tap can't run it.
+          destructive: true,
           run: () => onaction(u, a),
         });
       }
@@ -74,8 +78,11 @@
   function choose(c: Command) {
     if (c.destructive && confirming !== c.key) {
       confirming = c.key;
+      armedAt = Date.now();
       return;
     }
+    // Ignore a confirm that lands right after arming (double-tap). Fine for keyboard too.
+    if (c.destructive && Date.now() - armedAt < 500) return;
     open = false;
     c.run();
   }
@@ -93,6 +100,8 @@
       scrollActive();
     } else if (e.key === 'Enter') {
       e.preventDefault();
+      // A held-down Enter auto-repeats; only a fresh press may arm or confirm.
+      if (e.repeat) return;
       const c = results[active];
       if (c) choose(c);
     }
@@ -131,7 +140,7 @@
         >
           {#if c.unit}<Led tone={tone(c.unit)} />{:else}<span class="nol"></span>{/if}
           <span class="label">
-            {confirming === c.key ? `Press Enter again to ${c.label.toLowerCase()}` : c.label}
+            {confirming === c.key ? `${coarse ? 'Tap' : 'Press Enter'} again to ${c.label.toLowerCase()}` : c.label}
           </span>
           {#if c.unit}<span class="kind">{c.unit.kind}</span>{/if}
         </li>
@@ -144,19 +153,20 @@
 
 <style>
   dialog {
-    width: min(560px, calc(100vw - 32px));
-    max-height: min(520px, calc(100dvh - 96px));
+    width: min(580px, calc(100vw - 38px));
+    max-height: min(540px, calc(100dvh - 96px));
     margin: 12vh auto auto;
     padding: 0;
-    border: 1px solid var(--rule);
-    border-radius: 8px;
-    background: var(--plate);
-    color: var(--ink);
-    box-shadow: 0 24px 60px rgb(0 0 0 / 0.45);
+    border: 3px solid var(--edge);
+    border-radius: var(--r);
+    background: var(--card);
+    color: var(--fg);
+    box-shadow: var(--sh);
+    overflow: hidden;
   }
 
   dialog::backdrop {
-    background: rgb(10 12 15 / 0.55);
+    background: rgb(17 17 17 / 0.6);
   }
 
   .box {
@@ -166,54 +176,83 @@
   }
 
   input {
-    height: 48px;
-    padding: 0 16px;
+    min-height: 56px;
+    padding: 0 18px;
     border: 0;
-    border-bottom: 1px solid var(--rule);
-    background: transparent;
+    border-bottom: 3px solid var(--edge);
+    border-radius: 0;
+    background: var(--lemon);
+    color: #111;
     font-size: var(--fs-m);
+    font-weight: 700;
+    box-shadow: none;
+  }
+
+  input::placeholder {
+    color: rgb(17 17 17 / 0.7);
   }
 
   input:focus-visible {
-    outline: none;
+    outline: 4px solid #1f3fd6;
+    outline-offset: -4px;
   }
 
   ul {
     list-style: none;
     margin: 0;
-    padding: 6px;
+    padding: 10px;
     overflow: auto;
+    display: grid;
+    gap: 6px;
   }
 
   li {
     display: grid;
-    grid-template-columns: 8px minmax(0, 1fr) auto;
+    grid-template-columns: 14px minmax(0, 1fr) auto;
     align-items: center;
     gap: 12px;
-    padding: 8px 10px;
-    border-radius: 5px;
+    min-height: 44px;
+    padding: 6px 12px;
+    border: 3px solid transparent;
+    border-radius: 12px;
     font-size: var(--fs-s);
+    font-weight: 700;
     cursor: pointer;
+    overflow-wrap: anywhere;
   }
 
   li.active {
-    background: var(--plate-hi);
-    box-shadow: inset 2px 0 0 var(--trace);
+    background: var(--lemon);
+    color: #111;
+    --fg: #111;
+    --line: #111;
+    border-color: #111;
+    box-shadow: 3px 3px 0 #111;
   }
 
   li.danger {
-    box-shadow: inset 2px 0 0 var(--fail);
-    color: var(--fail);
+    background: var(--tomato);
+    color: #111;
+    --fg: #111;
+    --line: #111;
+    border-color: #111;
+    box-shadow: 3px 3px 0 #111;
   }
 
   .kind {
     font-size: var(--fs-xs);
-    color: var(--dim);
+    font-weight: 600;
+    color: var(--sub);
+  }
+
+  li.active .kind,
+  li.danger .kind {
+    color: rgb(17 17 17 / 0.75);
   }
 
   .none {
     display: block;
-    color: var(--dim);
+    color: var(--sub);
     cursor: default;
   }
 </style>

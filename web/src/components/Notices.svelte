@@ -6,7 +6,7 @@
 
 <div class="notices" role="status" aria-live="polite">
   {#each notices.items as n (n.id)}
-    <div class="notice" class:fail={n.tone === 'fail'}>
+    <div class="notice" class:fail={n.tone === 'fail'} class:ok={n.tone === 'ok'}>
       <Led tone={n.tone} />
       <span class="text">{n.text}</span>
       <button onclick={() => notices.dismiss(n.id)} aria-label="Dismiss">
@@ -23,27 +23,36 @@
     bottom: calc(16px + env(safe-area-inset-bottom));
     z-index: 40;
     display: grid;
-    gap: 8px;
-    width: min(420px, calc(100vw - 32px));
+    gap: 14px;
+    width: min(420px, calc(100vw - 38px));
     pointer-events: none;
   }
 
   .notice {
+    --fg: #111;
+    --line: #111;
+    --focus: #1f3fd6;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
-    padding: 10px 8px 10px 12px;
-    border: 1px solid var(--rule);
-    border-radius: 6px;
-    background: var(--plate-hi);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+    padding: 8px 8px 8px 14px;
+    border: 3px solid var(--edge);
+    border-radius: 16px;
+    background: var(--lemon);
+    color: #111;
+    box-shadow: 4px 4px 0 var(--edge);
     font-size: var(--fs-s);
+    font-weight: 700;
     pointer-events: auto;
   }
 
+  .ok {
+    background: var(--mint);
+  }
+
   .fail {
-    border-color: color-mix(in srgb, var(--fail) 45%, var(--rule));
+    background: var(--tomato);
   }
 
   .text {
@@ -53,16 +62,25 @@
   button {
     display: grid;
     place-items: center;
-    width: 26px;
-    height: 26px;
+    width: 36px;
+    height: 36px;
     padding: 0;
-    border: 0;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--dim);
+    border: 2.5px solid #111;
+    border-radius: 10px;
+    background: #fff;
+    color: #111;
+    touch-action: manipulation;
   }
 
-  button:hover {
-    color: var(--ink);
+  button:active {
+    background: #111;
+    color: #fff;
+  }
+
+  @media (pointer: coarse) {
+    button {
+      width: 44px;
+      height: 44px;
+    }
   }
 </style>

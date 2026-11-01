@@ -11,24 +11,34 @@
   });
 </script>
 
-<section class="activity" aria-label="Activity">
+<section class="tile tile-sky t-act" aria-labelledby="h-act">
+  <header class="th">
+    <h2 id="h-act">Activity</h2>
+    {#if live.audit.length}<span class="pill plain">{live.audit.length}</span>{/if}
+  </header>
   {#if live.audit.length === 0}
-    <p class="blank">Restarts, stops and starts done from this dashboard show up here.</p>
+    <div class="empty">
+      <b>Nothing yet</b>
+      <p>Restarts, stops and starts done from this dashboard show up here.</p>
+    </div>
   {:else}
-    <ol>
+    <ol class="alist" aria-live="polite">
       {#each live.audit as e, i (e.time + e.unit + i)}
-        <li class:bad={!e.ok}>
+        <li class="aitem" class:bad={!e.ok}>
+          <div class="l1">
+            <span class="res" class:bad={!e.ok}>{e.ok ? 'OK' : 'Failed'}</span>
+            <span class="what">
+              {#if e.ok}
+                {pastTense[e.action] ?? e.action} <span class="mono unit">{e.unit}</span>
+              {:else}
+                Couldn't {e.action} <span class="mono unit">{e.unit}</span>
+              {/if}
+            </span>
+          </div>
           <time class="mono" datetime={e.time}>{time.format(new Date(e.time))}</time>
-          <span class="what">
-            {#if e.ok}
-              {pastTense[e.action] ?? e.action} <span class="mono unit">{e.unit}</span>
-            {:else}
-              Couldn't {e.action} <span class="mono unit">{e.unit}</span>
-            {/if}
-          </span>
-          <span class="who mono">{e.user} from {e.ip}</span>
+          <span class="who">{e.user} from {e.ip}</span>
           {#if e.error}
-            <span class="error mono">{e.error}</span>
+            <span class="why mono">{e.error}</span>
           {/if}
         </li>
       {/each}
@@ -37,69 +47,114 @@
 </section>
 
 <style>
-  .activity {
-    overflow: auto;
-    min-height: 0;
-  }
-
-  .blank {
-    margin: 0;
-    padding: 32px 16px;
-    font-size: var(--fs-s);
-    color: var(--dim);
+  .empty {
+    padding: 18px;
+    border: 3px dashed var(--line);
+    border-radius: 16px;
+    background: var(--card);
+    color: #111;
     text-align: center;
+    font-weight: 700;
   }
 
-  ol {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  .empty p {
+    margin-top: 4px;
+    font-weight: 500;
+    color: var(--sub);
   }
 
-  li {
+  .alist {
     display: grid;
-    grid-template-columns: 150px minmax(0, 1fr);
-    column-gap: 12px;
-    row-gap: 2px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--rule);
-    font-size: var(--fs-s);
+    align-content: start;
+    gap: 10px;
+    flex: 1 1 0;
+    min-height: 200px;
+    margin: 0 -6px 0 -2px;
+    padding: 2px 6px 6px 2px;
+    list-style: none;
+    overflow: auto;
+    overscroll-behavior: contain;
   }
 
-  li.bad {
-    border-left: 2px solid var(--fail);
-    padding-left: 14px;
+  @media (max-width: 1000px) {
+    .alist {
+      flex: none;
+      max-height: 420px;
+    }
   }
 
-  time {
-    font-size: 11px;
-    color: var(--dim);
-    padding-top: 2px;
+  .aitem {
+    display: grid;
+    gap: 3px;
+    padding: 8px 10px;
+    border: 3px solid var(--line);
+    border-radius: 14px;
+    background: var(--card);
+    color: #111;
+    box-shadow: 3px 3px 0 var(--line);
+  }
+
+  .l1 {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    font-weight: 700;
+  }
+
+  .what {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .res {
+    flex: none;
+    padding: 0 8px;
+    border: 2.5px solid #111;
+    border-radius: 8px;
+    background: var(--mint);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .res.bad {
+    background: var(--tomato);
   }
 
   .unit {
+    padding: 0 6px;
+    border: 2px solid var(--line);
+    border-radius: 6px;
+    background: var(--lemon);
     font-size: 12px;
   }
 
-  .who,
-  .error {
-    grid-column: 2;
-    font-size: 11px;
-    color: var(--dim);
+  time,
+  .who {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--sub);
   }
 
-  .error {
-    color: var(--fail);
+  .why {
+    padding: 2px 6px;
+    border: 2px solid #111;
+    border-radius: 8px;
+    background: var(--tomato);
+    font-size: 12px;
+    overflow-wrap: anywhere;
   }
 
-  @media (max-width: 560px) {
-    li {
-      grid-template-columns: minmax(0, 1fr);
+  @media (prefers-reduced-motion: no-preference) {
+    .aitem:first-child {
+      animation: slidein 0.5s cubic-bezier(0.3, 1.6, 0.5, 1);
     }
+  }
 
-    .who,
-    .error {
-      grid-column: 1;
+  @keyframes slidein {
+    from {
+      transform: translateX(30px) rotate(2deg);
+      opacity: 0;
     }
   }
 </style>

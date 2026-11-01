@@ -1,51 +1,67 @@
+/*
+  dashd, "bento pop" skin.
+  Every colour lives here once. Light is the default; dark follows the system.
+  Coloured tiles (lemon, sky, lilac, ...) pin their ink to near-black in both
+  themes, so text on them never depends on the theme.
+*/
 :root {
-  /* Rack bay and faceplates */
-  --bay: #161a1f;
-  --plate: #1f252c;
-  --plate-hi: #262d35;
-  --rule: #2e3640;
-  --ink: #d5dce3;
-  --dim: #7d8894;
-  /* Live signal: traces, focus, selection */
-  --trace: #5fd3c4;
-  --trace-soft: rgb(95 211 196 / 0.12);
-  --trace-grid: rgb(125 136 148 / 0.14);
-  /* Status LEDs. Nothing else uses these. */
-  --ok: #7cc48a;
-  --warn: #e3b55b;
-  --fail: #ee6a5f;
-  --idle: #56606b;
-  --fail-soft: rgb(238 106 95 / 0.1);
+  --paper: #f4f2ec;
+  --card: #ffffff;
+  --fg: #111111;
+  --edge: #111111;
+  --line: var(--edge);
+  --sub: rgb(17 17 17 / 0.7);
+  --dots: rgb(17 17 17 / 0.16);
 
-  --mono: 'Martian Mono Variable', ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  --sans: 'Instrument Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --lemon: #ffe14d;
+  --tomato: #ff5b3f;
+  --mint: #4fe0a0;
+  --lilac: #b7a2ff;
+  --sky: #7cc8ff;
+  --focus: #2b59ff;
+
+  /* Terminal (log output) is dark in both themes. */
+  --term: #17161b;
+  --termfg: #f4f2ec;
+  --termdim: rgb(244 242 236 / 0.62);
+
+  --r: 22px;
+  --sh-n: 6px;
+  --sh: var(--sh-n) var(--sh-n) 0 var(--edge);
+
+  --mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --sans: 'Bricolage Grotesque Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --fs-xs: 12px;
-  --fs-s: 13px;
-  --fs-m: 15px;
-  --fs-l: 20px;
-  --fs-xl: 32px;
+  --fs-s: 14px;
+  --fs-m: 16px;
+  --fs-l: 22px;
+  --fs-xl: 44px;
 
-  color-scheme: dark;
+  /* Chart colours read by HostTrace's canvas. */
+  --trace: #111111;
+  --trace-soft: rgb(17 17 17 / 0.14);
+  --trace-grid: rgb(17 17 17 / 0.2);
+  --dim: rgb(17 17 17 / 0.75);
+
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bay: #e4e8ec;
-    --plate: #f4f6f8;
-    --plate-hi: #ffffff;
-    --rule: #c8cfd6;
-    --ink: #1b232b;
-    --dim: #5a6571;
-    --trace: #0b8578;
-    --trace-soft: rgb(11 133 120 / 0.1);
-    --trace-grid: rgb(90 101 113 / 0.16);
-    --ok: #2e8544;
-    --warn: #a36a08;
-    --fail: #c43a2f;
-    --idle: #8d97a1;
-    --fail-soft: rgb(196 58 47 / 0.08);
-    color-scheme: light;
-  }
+/* Light is the default. main.ts sets data-theme from the saved choice, else the system. */
+:root[data-theme='dark'] {
+  --paper: #17161b;
+  --card: #262430;
+  --fg: #f4f2ec;
+  --edge: #f4f2ec;
+  --sub: rgb(244 242 236 / 0.72);
+  --dots: rgb(244 242 236 / 0.13);
+  --lemon: #ffd92e;
+  --tomato: #ff6a4d;
+  --mint: #3fd893;
+  --lilac: #a98fff;
+  --sky: #62bdff;
+  --focus: #8fb0ff;
+  --term: #0e0d11;
+  color-scheme: dark;
 }
 
 *,
@@ -54,36 +70,58 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 html,
 body {
   margin: 0;
-  background: var(--bay);
-  color: var(--ink);
+  background-color: var(--paper);
+  color: var(--fg);
   font-family: var(--sans);
   font-size: var(--fs-m);
-  line-height: 1.45;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+body {
+  background-image: radial-gradient(var(--dots) 1.4px, transparent 1.5px);
+  background-size: 26px 26px;
+  overflow-x: hidden;
+}
+
 button,
-input {
+input,
+select {
   font: inherit;
   color: inherit;
 }
 
 button {
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 :focus-visible {
-  outline: 2px solid var(--trace);
-  outline-offset: 2px;
+  outline: 4px solid var(--focus);
+  outline-offset: 3px;
 }
 
 .mono {
   font-family: var(--mono);
-  font-stretch: 87.5%;
   font-variant-numeric: tabular-nums;
 }
 
@@ -101,42 +139,363 @@ button {
 
 kbd {
   font-family: var(--mono);
-  font-stretch: 87.5%;
   font-size: 11px;
-  padding: 1px 5px;
-  border: 1px solid var(--rule);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  color: var(--dim);
-  background: var(--bay);
+  padding: 0 5px;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: inherit;
+  box-shadow: 1px 1px 0 var(--line);
 }
 
-/* Quiet text button used across the chrome. */
-.btn {
+/* ---------- tiles ---------- */
+.tile {
+  position: relative;
+  min-width: 0;
+  background: var(--card);
+  color: var(--fg);
+  border: 3px solid var(--edge);
+  border-radius: var(--r);
+  box-shadow: var(--sh);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+}
+
+.pin,
+.tile-lemon,
+.tile-sky,
+.tile-lilac,
+.tile-mint,
+.tile-tomato {
+  --fg: #111111;
+  --line: #111111;
+  --card: #ffffff;
+  --sub: rgb(17 17 17 / 0.72);
+  --focus: #1f3fd6;
+  color: #111111;
+}
+
+.tile-lemon {
+  background: var(--lemon);
+}
+.tile-sky {
+  background: var(--sky);
+}
+.tile-lilac {
+  background: var(--lilac);
+}
+.tile-mint {
+  background: var(--mint);
+}
+/* The ink tile flips with the theme: dark card on light paper, light card on dark. */
+.tile-ink {
+  background: var(--fg);
+  color: var(--paper);
+  --sub: color-mix(in srgb, var(--paper) 72%, transparent);
+  --line: var(--paper);
+  --focus: var(--lemon);
+}
+.tile-tomato {
+  background: var(--tomato);
+}
+
+@media (max-width: 560px) {
+  :root {
+    --r: 18px;
+    --sh-n: 5px;
+  }
+
+  .tile {
+    padding: 14px;
+  }
+}
+
+/* ---------- bento grid ---------- */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 18px;
+  grid-auto-flow: row dense;
+}
+
+.t-cpu {
+  grid-column: span 6;
+  grid-row: span 2;
+}
+.t-mem,
+.t-swap,
+.t-load,
+.t-temp {
+  grid-column: span 3;
+}
+.t-net {
+  grid-column: span 4;
+}
+.t-disk {
+  grid-column: span 5;
+}
+.t-up {
+  grid-column: span 3;
+}
+.t-units {
+  grid-column: span 8;
+}
+.t-act {
+  grid-column: span 4;
+}
+.t-logs {
+  grid-column: span 12;
+}
+
+@media (max-width: 1000px) {
+  .bento {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .t-cpu {
+    grid-row: auto;
+  }
+  .t-cpu,
+  .t-net,
+  .t-disk,
+  .t-up,
+  .t-units,
+  .t-act,
+  .t-logs {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 560px) {
+  .bento {
+    gap: 14px;
+  }
+}
+
+/* Tile header: heading on the left, chips and tools after it. */
+.th {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.th h2 {
+  flex: none;
+  margin-right: auto;
+  min-width: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.sub {
+  font-size: var(--fs-s);
+  font-weight: 600;
+  color: var(--sub);
+}
+
+/* Switch: the theme toggle and any on/off control. */
+.switch {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 2px;
+  border: 0;
+  background: none;
+  font-weight: 700;
+  color: inherit;
+}
+
+.switch .trk {
+  position: relative;
+  flex: none;
+  width: 54px;
   height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--rule);
-  border-radius: 5px;
-  background: var(--plate);
+  border: 3px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: 2px 2px 0 var(--line);
+  transition: background 0.2s;
+}
+
+.switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--line);
+  border-radius: 50%;
+  background: var(--tomato);
+  transition:
+    transform 0.35s cubic-bezier(0.34, 1.8, 0.5, 1),
+    background 0.2s;
+}
+
+.switch[aria-checked='true'] .trk {
+  background: var(--mint);
+}
+
+.switch[aria-checked='true'] .knob {
+  transform: translateX(24px);
+  background: var(--lemon);
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 4px 14px;
+  border: 3px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--fg);
+  font-weight: 700;
   font-size: var(--fs-s);
   white-space: nowrap;
+  box-shadow: 3px 3px 0 var(--line);
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s;
+  touch-action: manipulation;
 }
 
-.btn:hover {
-  background: var(--plate-hi);
+.btn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--line);
 }
 
-.btn[aria-pressed='true'] {
-  border-color: var(--trace);
-  color: var(--trace);
+.btn:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--line);
 }
 
 .btn:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: translate(3px, 3px);
+}
+
+.btn[aria-pressed='true'] {
+  background: var(--lemon);
+  color: #111;
+}
+
+.btn.mint {
+  background: var(--mint);
+  color: #111;
+}
+
+.btn.ink {
+  background: #111;
+  color: #f4f2ec;
+  border-color: #111;
+}
+
+.btn.quiet {
+  background: transparent;
+  box-shadow: none;
+}
+
+.btn.quiet:hover:not(:disabled) {
+  background: var(--card);
+}
+
+@media (pointer: coarse) {
+  .btn {
+    min-height: 44px;
+  }
+}
+
+/* ---------- inputs ---------- */
+input[type='text'],
+input[type='password'],
+input[type='search'],
+input:not([type]) {
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 3px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: inset 3px 3px 0 rgb(128 128 128 / 0.2);
+}
+
+input::placeholder {
+  color: var(--sub);
+  font-weight: 500;
+}
+
+/* ---------- pills: state, counts ---------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 2.5px solid var(--line);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.6);
+  color: #111;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pill::before {
+  content: '';
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #111;
+}
+
+.pill.plain::before {
+  display: none;
+}
+
+.pill.ok {
+  background: var(--mint);
+}
+
+.pill.idle {
+  background: #cfcbc2;
+}
+
+.pill.idle::before {
+  background: transparent;
+  border: 2.5px solid #111;
+}
+
+.pill.fail {
+  background: var(--tomato);
+}
+
+.pill.fail::before {
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+.pill.warn {
+  background: repeating-linear-gradient(-45deg, var(--lemon) 0 7px, #fff3a0 7px 14px);
+  background-size: 200% 100%;
+  animation: barber 1s linear infinite;
+}
+
+@keyframes barber {
+  to {
+    background-position: 28px 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -145,5 +504,12 @@ kbd {
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  .btn,
+  .switch .knob,
+  .switch .trk {
+    transition: none;
   }
 }

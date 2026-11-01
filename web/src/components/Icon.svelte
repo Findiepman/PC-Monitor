@@ -30,7 +30,7 @@
     flex: none;
     fill: none;
     stroke: currentColor;
-    stroke-width: 1.6;
+    stroke-width: 2.2;
     stroke-linecap: round;
     stroke-linejoin: round;
   }

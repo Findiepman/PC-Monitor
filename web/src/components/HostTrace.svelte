@@ -1,394 +1,420 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { live } from '../lib/live.svelte';
-  import { bytesOf, pct, rate } from '../lib/format';
+  import { bytes, bytesOf, duration, rate } from '../lib/format';
 
-  const WINDOW = 300_000; // five minutes on screen
-  const INTERVAL = 2_000; // host sample period
+  // Eight separate bento tiles for the host. Each one is a direct child of the
+  // page grid, which places it (see app.css).
+  const SAMPLES = 40; // about 80 seconds of CPU and network history
 
-  let canvas: HTMLCanvasElement;
   let host = $derived(live.history.at(-1));
+  let recent = $derived(live.history.slice(-SAMPLES));
 
-  function level(fraction: number): string {
-    if (fraction >= 0.95) return 'fail';
-    if (fraction >= 0.85) return 'warn';
-    return '';
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  const share = (used: number, total: number) => (total > 0 ? clamp((used / total) * 100, 0, 100) : 0);
+
+  let mem = $derived(host ? share(host.memUsed, host.memTotal) : 0);
+  let swap = $derived(host ? share(host.swapUsed, host.swapTotal) : 0);
+  let hasTemp = $derived(host?.temp != null);
+  let tempBar = $derived(host?.temp != null ? clamp(((host.temp - 30) / 60) * 100, 0, 100) : 0);
+
+  /** "12.4 MB/s" split into the big number and its small unit. */
+  function split(bps: number | undefined): [string, string] {
+    if (bps == null) return ['–', ''];
+    const [n, ...u] = rate(bps).split(' ');
+    return [n, u.join(' ')];
   }
+  let rx = $derived(split(host?.netRx));
+  let tx = $derived(split(host?.netTx));
 
-  onMount(() => {
-    const ctx = canvas.getContext('2d')!;
-    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-    let colors = readColors();
-    let raf = 0;
-    let dirty = true;
-
-    function readColors() {
-      const s = getComputedStyle(canvas);
-      return {
-        trace: s.getPropertyValue('--trace').trim(),
-        soft: s.getPropertyValue('--trace-soft').trim(),
-        grid: s.getPropertyValue('--trace-grid').trim(),
-        dim: s.getPropertyValue('--dim').trim(),
-      };
-    }
-
-    const scheme = matchMedia('(prefers-color-scheme: light)');
-    const onScheme = () => {
-      colors = readColors();
-      dirty = true;
-    };
-    scheme.addEventListener('change', onScheme);
-
-    const ro = new ResizeObserver(() => (dirty = true));
-    ro.observe(canvas);
-
-    function frame() {
-      raf = requestAnimationFrame(frame);
-      const hist = live.history;
-      if (hist.length === 0) return;
-      const animate = !reduced.matches;
-      if (!animate && !dirty && canvas.dataset.t === String(hist.at(-1)!.t)) return;
-      dirty = false;
-      canvas.dataset.t = String(hist.at(-1)!.t);
-      draw(hist, animate);
-    }
-
-    function draw(hist: typeof live.history, animate: boolean) {
-      const dpr = window.devicePixelRatio || 1;
-      const w = canvas.clientWidth;
-      const h = canvas.clientHeight;
-      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-        canvas.width = Math.round(w * dpr);
-        canvas.height = Math.round(h * dpr);
-      }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
-
-      // Draw one interval behind real time so the head can glide between
-      // samples instead of jumping every two seconds.
-      const last = hist.at(-1)!.t;
-      const elapsed = animate ? Math.min(performance.now() - live.hostArrivedAt, INTERVAL) : INTERVAL;
-      const now = last - INTERVAL + elapsed;
-      const x = (t: number) => w - ((now - t) / WINDOW) * w;
-      const pad = 6;
-      const y = (v: number) => pad + (1 - Math.min(Math.max(v, 0), 100) / 100) * (h - pad * 2);
-
-      // Graticule: horizontal quarters, vertical every 30s moving with time.
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = colors.grid;
-      ctx.beginPath();
-      for (const v of [25, 50, 75]) {
-        const yy = Math.round(y(v)) + 0.5;
-        ctx.moveTo(0, yy);
-        ctx.lineTo(w, yy);
-      }
-      for (let t = Math.floor(now / 30_000) * 30_000; t > now - WINDOW; t -= 30_000) {
-        const xx = Math.round(x(t)) + 0.5;
-        ctx.moveTo(xx, 0);
-        ctx.lineTo(xx, h);
-      }
-      ctx.stroke();
-
-      // Points up to `now`, with the last one interpolated.
-      const series = (pick: (s: (typeof hist)[number]) => number) => {
-        const pts: [number, number][] = [];
-        for (let i = 0; i < hist.length; i++) {
-          const s = hist[i];
-          if (s.t <= now) {
-            pts.push([x(s.t), y(pick(s))]);
-          } else {
-            const prev = hist[i - 1];
-            if (prev) {
-              const f = (now - prev.t) / (s.t - prev.t);
-              pts.push([w, y(pick(prev) + (pick(s) - pick(prev)) * f)]);
-            }
-            break;
-          }
-        }
-        return pts;
-      };
-
-      const mem = series((s) => (s.memTotal ? (s.memUsed / s.memTotal) * 100 : 0));
-      ctx.strokeStyle = colors.dim;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      mem.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      const cpu = series((s) => s.cpu);
-      if (cpu.length > 1) {
-        ctx.beginPath();
-        cpu.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
-        ctx.lineTo(cpu.at(-1)![0], h);
-        ctx.lineTo(cpu[0][0], h);
-        ctx.closePath();
-        ctx.fillStyle = colors.soft;
-        ctx.fill();
-
-        ctx.beginPath();
-        cpu.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
-        ctx.strokeStyle = colors.trace;
-        ctx.lineWidth = 1.75;
-        ctx.lineJoin = 'round';
-        ctx.stroke();
-
-        const [hx, hy] = cpu.at(-1)!;
-        ctx.fillStyle = colors.trace;
-        ctx.beginPath();
-        ctx.arc(hx - 1, hy, 3, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    raf = requestAnimationFrame(frame);
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      scheme.removeEventListener('change', onScheme);
-    };
-  });
+  function path(values: number[], max: number): string {
+    const n = values.length;
+    if (n < 2) return '';
+    return values
+      .map((v, i) => `${i ? 'L' : 'M'}${((i / (n - 1)) * 100).toFixed(1)} ${(38 - clamp(v / max, 0, 1) * 34).toFixed(1)}`)
+      .join(' ');
+  }
+  let netMax = $derived(Math.max(...recent.map((s) => Math.max(s.netRx, s.netTx)), 64 * 1024));
+  let rxPath = $derived(path(recent.map((s) => s.netRx), netMax));
+  let txPath = $derived(path(recent.map((s) => s.netTx), netMax));
 </script>
 
-<section class="scope" aria-label="Host resources">
-  <div class="screen">
-    <canvas bind:this={canvas} aria-hidden="true"></canvas>
-    <span class="axis top mono">100</span>
-    <span class="axis mid mono">50</span>
-    <span class="axis left mono">5 min ago</span>
-    <span class="axis right mono">now</span>
+<section class="tile tile-lemon t-cpu" aria-labelledby="h-cpu">
+  <header class="th"><h2 id="h-cpu">CPU</h2></header>
+  <div class="big big-xl" aria-label="CPU {host ? Math.round(host.cpu) + ' percent' : 'unknown'}">
+    <span>{host ? Math.round(host.cpu) : '–'}</span>{#if host}<small>%</small>{/if}
   </div>
-
-  <div class="readouts">
-    <div class="cpu">
-      <div class="row">
-        <span class="label"><i class="key trace"></i>CPU</span>
-        <span class="big mono">{host ? pct(host.cpu) : '–'}</span>
-      </div>
-      {#if host?.cores}
-        <div class="cores" aria-label="Per-core usage">
-          {#each host.cores as c, i (i)}
-            <span class="core" style:--v={Math.max(c, 2) / 100} title="Core {i}: {pct(c)}"></span>
-          {/each}
+  <div class="spark" aria-hidden="true">
+    {#each recent as s, i (i)}<i style:height="{clamp(s.cpu, 2, 100)}%"></i>{/each}
+  </div>
+  {#if host?.cores?.length}
+    <div class="cores" role="list" aria-label="Per-core usage">
+      {#each host.cores as c, i (i)}
+        <div class="core" role="listitem" title="Core {i}: {Math.round(c)}%">
+          <i style:height="{clamp(c, 0, 100)}%"></i><span>{Math.round(c)}</span>
         </div>
-      {/if}
-      <span class="sub mono">
-        {host?.cores?.length ?? '–'} cores{#if host?.temp != null}, {Math.round(host.temp)} °C{/if}
-      </span>
+      {/each}
     </div>
+  {/if}
+</section>
 
-    {#if host}
-      <dl>
-        <div>
-          <dt><i class="key mem"></i>Memory</dt>
-          <dd class="mono">{bytesOf(host.memUsed, host.memTotal)}</dd>
-          <span class="bar {level(host.memUsed / host.memTotal)}" style:--v={host.memUsed / host.memTotal}></span>
-        </div>
-        {#if host.swapTotal > 0}
-          <div>
-            <dt>Swap</dt>
-            <dd class="mono">{bytesOf(host.swapUsed, host.swapTotal)}</dd>
-            <span class="bar {level(host.swapUsed / host.swapTotal)}" style:--v={host.swapUsed / host.swapTotal}></span>
-          </div>
-        {/if}
-        {#each host.disks ?? [] as d (d.mount)}
-          <div>
-            <dt class="mono path" title={d.mount}>{d.mount}</dt>
-            <dd class="mono">{bytesOf(d.used, d.total)}</dd>
-            <span class="bar {level(d.used / d.total)}" style:--v={d.used / d.total}></span>
-          </div>
-        {/each}
-        <div>
-          <dt>Network</dt>
-          <dd class="mono net">
-            <span title="Received">↓ {rate(host.netRx)}</span>
-            <span title="Sent">↑ {rate(host.netTx)}</span>
-          </dd>
-        </div>
-      </dl>
-    {/if}
+<section class="tile tile-mint t-mem" aria-labelledby="h-mem">
+  <header class="th"><h2 id="h-mem">Memory</h2></header>
+  <div class="big big-l"><span>{host ? Math.round(mem) : '–'}</span>{#if host}<small>%</small>{/if}</div>
+  <div class="bar" class:warn={mem >= 85}><i style:width="{mem}%"></i></div>
+  <div class="sub">{host ? bytesOf(host.memUsed, host.memTotal) : 'Waiting for the first sample'}</div>
+</section>
+
+<section class="tile tile-sky t-swap" aria-labelledby="h-swap">
+  <header class="th"><h2 id="h-swap">Swap</h2></header>
+  {#if host && host.swapTotal <= 0}
+    <div class="big big-l"><span>–</span></div>
+    <div class="bar"><i style:width="0%"></i></div>
+    <div class="sub">No swap on this host</div>
+  {:else}
+    <div class="big big-l"><span>{host ? Math.round(swap) : '–'}</span>{#if host}<small>%</small>{/if}</div>
+    <div class="bar" class:warn={swap >= 85}><i style:width="{swap}%"></i></div>
+    <div class="sub">{host ? bytesOf(host.swapUsed, host.swapTotal) : 'Waiting for the first sample'}</div>
+  {/if}
+</section>
+
+<section class="tile t-load" aria-labelledby="h-load">
+  <header class="th">
+    <h2 id="h-load">Load</h2>
+    {#if host?.cores?.length}<span class="pill plain">{host.cores.length} cores</span>{/if}
+  </header>
+  <div class="big big-l">{host?.load.length ? host.load[0].toFixed(2) : '–'}</div>
+  <div class="mini" title="Load average over 1, 5 and 15 minutes">
+    {#each ['1 min', '5 min', '15 min'] as label, i (label)}
+      <div class:on={i === 0}><em>{label}</em><span>{host?.load[i] != null ? host.load[i].toFixed(2) : '–'}</span></div>
+    {/each}
   </div>
 </section>
 
+<section class="tile tile-tomato t-temp" aria-labelledby="h-temp">
+  <header class="th"><h2 id="h-temp">Temp</h2></header>
+  <div class="big big-l"><span>{hasTemp ? Math.round(host!.temp!) : '–'}</span>{#if hasTemp}<small>°C</small>{/if}</div>
+  {#if hasTemp}
+    <div class="thermo">
+      <div class="bar"><i style:width="{tempBar}%"></i></div>
+      <div class="scale"><span>30</span><span>60</span><span>90°C</span></div>
+    </div>
+  {:else}
+    <div class="sub">{host ? 'No temperature sensor found' : 'Waiting for the first sample'}</div>
+  {/if}
+</section>
+
+<section class="tile tile-lilac t-net" aria-labelledby="h-net">
+  <header class="th"><h2 id="h-net">Network</h2></header>
+  <div class="netrow">
+    <div class="nm" title="Received">
+      <span class="sub">Download</span>
+      <div class="big big-m"><span>{rx[0]}</span><small>{rx[1]}</small></div>
+    </div>
+    <div class="nm" title="Sent">
+      <span class="sub">Upload</span>
+      <div class="big big-m"><span>{tx[0]}</span><small>{tx[1]}</small></div>
+    </div>
+  </div>
+  <svg class="netsvg" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+    <path d={rxPath} />
+    <path class="tx" d={txPath} />
+  </svg>
+</section>
+
+<section class="tile t-disk" aria-labelledby="h-disk">
+  <header class="th"><h2 id="h-disk">Disks</h2></header>
+  {#if host?.disks?.length}
+    <div class="disks">
+      {#each host.disks as d (d.mount)}
+        {@const p = share(d.used, d.total)}
+        <div class="disk">
+          <div class="dl">
+            <code title={d.mount}>{d.mount}</code>
+            <span>{bytesOf(d.used, d.total)}, {Math.round(p)}%</span>
+          </div>
+          <div class="bar thin" class:warn={p >= 85}><i style:width="{p}%"></i></div>
+        </div>
+      {/each}
+    </div>
+  {:else}
+    <p class="sub">{host ? 'No disks reported.' : 'Waiting for the first sample'}</p>
+  {/if}
+</section>
+
+<section class="tile tile-ink t-up" aria-labelledby="h-up">
+  <header class="th"><h2 id="h-up">Uptime</h2></header>
+  <div class="uptime">{host ? duration(host.uptime) : '–'}</div>
+  <div class="sub">since the last reboot</div>
+</section>
+
 <style>
-  .scope {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-    border-bottom: 1px solid var(--rule);
-    background: var(--plate);
-  }
-
-  .screen {
-    position: relative;
-    min-height: 196px;
-    border-right: 1px solid var(--rule);
-    background: var(--bay);
-  }
-
-  canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-
-  .axis {
-    position: absolute;
-    font-size: 10px;
-    color: var(--dim);
-    pointer-events: none;
-  }
-
-  .top {
-    top: 4px;
-    left: 8px;
-  }
-
-  .mid {
-    top: calc(50% - 8px);
-    left: 8px;
-  }
-
-  .left {
-    bottom: 4px;
-    left: 8px;
-  }
-
-  .right {
-    bottom: 4px;
-    right: 8px;
-  }
-
-  .readouts {
-    display: grid;
-    align-content: start;
-    gap: 14px;
-    padding: 14px 16px;
-  }
-
-  .row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-  }
-
-  .label,
-  dt {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: var(--fs-s);
-    color: var(--dim);
-  }
-
-  .key {
-    display: inline-block;
-    width: 12px;
-    height: 0;
-    border-top: 2px solid var(--trace);
-  }
-
-  .key.mem {
-    border-top: 1px dashed var(--dim);
-  }
-
   .big {
-    font-size: var(--fs-xl);
-    line-height: 1;
-    font-weight: 500;
-    color: var(--trace);
-    letter-spacing: -0.02em;
+    font-weight: 800;
+    line-height: 0.82;
+    letter-spacing: -0.05em;
+    font-stretch: 75%;
+    font-variation-settings: 'opsz' 96;
+    font-variant-numeric: tabular-nums;
   }
 
-  .cores {
-    display: flex;
-    align-items: flex-end;
-    gap: 3px;
-    height: 22px;
-    margin: 8px 0 4px;
+  .big small {
+    margin-left: 4px;
+    font-size: 0.3em;
+    font-weight: 700;
+    letter-spacing: 0;
   }
 
-  .core {
-    flex: 1;
-    max-width: 10px;
-    height: calc(var(--v) * 100%);
-    background: var(--trace);
-    opacity: 0.75;
+  .big-xl {
+    font-size: clamp(88px, 15vw, 196px);
+  }
+  .big-l {
+    font-size: clamp(52px, 7vw, 92px);
+  }
+  .big-m {
+    font-size: clamp(42px, 5vw, 64px);
   }
 
-  .sub {
-    font-size: 11px;
-    color: var(--dim);
-  }
-
-  dl {
-    display: grid;
-    gap: 10px;
-    margin: 0;
-  }
-
-  dl > div {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: 12px;
-    row-gap: 4px;
-    align-items: baseline;
-  }
-
-  dd {
-    margin: 0;
-    font-size: var(--fs-xs);
-    text-align: right;
-  }
-
-  .path {
-    font-size: 11px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    display: block;
-  }
-
-  .net {
-    display: flex;
-    gap: 12px;
+  @media (max-width: 1000px) {
+    .big-xl {
+      font-size: clamp(96px, 28vw, 200px);
+    }
+    .big-l {
+      font-size: clamp(50px, 11vw, 84px);
+    }
   }
 
   .bar {
-    grid-column: 1 / -1;
-    height: 3px;
-    background: linear-gradient(var(--ink), var(--ink)) no-repeat left / calc(var(--v) * 100%) 100%, var(--rule);
+    position: relative;
+    height: 22px;
+    border: 3px solid var(--line);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.5);
+    overflow: hidden;
   }
 
-  .bar.warn {
-    background: linear-gradient(var(--warn), var(--warn)) no-repeat left / calc(var(--v) * 100%) 100%, var(--rule);
+  .bar i {
+    display: block;
+    height: 100%;
+    background: #111;
+    border-radius: 999px 0 0 999px;
+    transition: width 0.6s cubic-bezier(0.3, 1.4, 0.5, 1);
   }
 
-  .bar.fail {
-    background: linear-gradient(var(--fail), var(--fail)) no-repeat left / calc(var(--v) * 100%) 100%, var(--rule);
+  .bar.warn i {
+    background: var(--tomato);
+    border-right: 3px solid var(--line);
   }
 
-  @media (max-width: 899px) {
-    .scope {
-      grid-template-columns: minmax(0, 1fr);
-    }
+  .bar.thin {
+    height: 14px;
+    border-width: 2.5px;
+  }
 
-    .screen {
-      min-height: 132px;
-      border-right: 0;
-      border-bottom: 1px solid var(--rule);
-    }
+  .t-disk .bar {
+    background: rgb(128 128 128 / 0.25);
+  }
 
-    .readouts {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
-      column-gap: 20px;
+  .t-disk .bar i {
+    background: var(--fg);
+  }
+
+  .spark {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 64px;
+  }
+
+  .spark i {
+    flex: 1;
+    min-width: 2px;
+    background: #111;
+    border-radius: 3px 3px 0 0;
+    transition: height 0.5s;
+  }
+
+  .cores {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: auto;
+  }
+
+  .core {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    height: 76px;
+    border: 3px solid var(--line);
+    border-radius: 10px;
+    background: rgb(255 255 255 / 0.55);
+    overflow: hidden;
+  }
+
+  .core i {
+    position: absolute;
+    inset: auto 0 0;
+    background: #111;
+    transition: height 0.6s cubic-bezier(0.3, 1.4, 0.5, 1);
+  }
+
+  .core span {
+    position: relative;
+    margin-bottom: 3px;
+    padding: 0 4px;
+    border: 2px solid #111;
+    border-radius: 6px;
+    background: #fff;
+    color: #111;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.3;
+  }
+
+  @media (max-width: 560px) {
+    .cores {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
 
-  @media (max-width: 420px) {
-    .readouts {
-      grid-template-columns: minmax(0, 1fr);
+  .mini {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: auto;
+  }
+
+  .mini div {
+    padding: 3px 8px;
+    border: 2.5px solid var(--line);
+    border-radius: 10px;
+    background: rgb(255 255 255 / 0.55);
+    color: #111;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mini div.on {
+    background: #111;
+    color: #f4f2ec;
+  }
+
+  .mini em {
+    display: block;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 700;
+    opacity: 0.7;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 560px) {
+    .mini {
+      gap: 4px;
     }
+
+    .mini div {
+      min-width: 0;
+      padding: 3px 3px;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    .mini em {
+      font-size: 10px;
+      letter-spacing: -0.02em;
+    }
+  }
+
+  .thermo {
+    margin-top: auto;
+  }
+
+  .scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .netrow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .nm {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .netsvg {
+    width: 100%;
+    height: 64px;
+    margin-top: auto;
+    border: 3px solid var(--line);
+    border-radius: 12px;
+    background: rgb(255 255 255 / 0.5);
+  }
+
+  .netsvg path {
+    fill: none;
+    stroke: #111;
+    stroke-width: 3;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .netsvg path.tx {
+    stroke: var(--tomato);
+    stroke-width: 4;
+  }
+
+  .disks {
+    display: grid;
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  .disk {
+    display: grid;
+    gap: 4px;
+  }
+
+  .dl {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: var(--fs-s);
+    font-weight: 700;
+  }
+
+  .dl code {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .dl span {
+    flex: none;
+  }
+
+  .uptime {
+    font-size: clamp(30px, 4vw, 46px);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-stretch: 75%;
+    font-variant-numeric: tabular-nums;
   }
 </style>

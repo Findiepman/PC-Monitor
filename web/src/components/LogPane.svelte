@@ -125,22 +125,25 @@
   }
 </script>
 
-<section class="pane" class:sheet aria-label={unit ? `Logs for ${unit.name}` : 'Logs'}>
-  {#if !unit}
-    <div class="blank">
-      <p>Pick a service to follow its logs.</p>
-    </div>
-  {:else}
-    <header>
-      <div class="title">
-        {#if sheet}
-          <button class="btn back" onclick={onclose}>Back</button>
-        {/if}
-        <Led tone={tone(unit)} />
-        <h2>{unit.name}</h2>
-        <span class="kind">{stateLabel(unit)}, {unit.kind}</span>
-      </div>
+<section class="pane" class:sheet class:t-logs={!sheet} aria-label={unit ? `Logs for ${unit.name}` : 'Logs'}>
+  <div class="shell tile tile-lilac">
+    <header class="th">
+      {#if sheet}
+        <button class="btn back" onclick={onclose}>Back</button>
+      {/if}
+      <h2>Logs</h2>
+      {#if unit}
+        <span class="uname"><Led tone={tone(unit)} /><span class="un">{unit.name}</span></span>
+        <span class="kind pill plain">{stateLabel(unit)}, {unit.kind}</span>
+      {/if}
+    </header>
 
+    {#if !unit}
+      <div class="blank">
+        <b>No service selected</b>
+        <p>Pick a service to follow its logs.</p>
+      </div>
+    {:else}
       <div class="controls">
         <label class="filter">
           <span class="sr-only">Filter log lines</span>
@@ -148,14 +151,13 @@
             bind:this={filterInput}
             bind:value={filter}
             type="search"
-            placeholder="Filter"
+            placeholder="Filter lines"
             spellcheck="false"
             onkeydown={(e) => e.key === 'Escape' && ((filter = ''), (e.currentTarget as HTMLInputElement).blur())}
           />
         </label>
         <button class="btn" aria-pressed={showTime} onclick={() => (showTime = !showTime)}>Time</button>
         <button class="btn" aria-pressed={wrap} onclick={() => (wrap = !wrap)}>Wrap</button>
-        <span class="spacer"></span>
         <button class="btn" disabled={!visible.length} onclick={() => copy('all', asText(visible))}>
           <Icon name={copied === 'all' ? 'check' : 'copy'} />
           {#if copied === 'all'}
@@ -168,7 +170,6 @@
           <Icon name="download" />
         </button>
       </div>
-    </header>
 
     <!-- A focusable scroll region lets keyboard users scroll the log. -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
@@ -223,114 +224,143 @@
         <span>Following new output</span>
       {/if}
     </footer>
-  {/if}
+    {/if}
+  </div>
 </section>
 
 <style>
   .pane {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
     min-width: 0;
-    min-height: 0;
-    height: 100%;
-    background: var(--bay);
   }
 
+  .shell {
+    min-height: 0;
+  }
+
+  /* Phone: the log takes over the screen as one big tile. */
   .sheet {
     position: fixed;
     inset: 0;
     z-index: 20;
     height: 100dvh;
-    padding-bottom: env(safe-area-inset-bottom);
+    padding: 12px 17px calc(17px + env(safe-area-inset-bottom)) 12px;
+    background-color: var(--paper);
+    background-image: radial-gradient(var(--dots) 1.4px, transparent 1.5px);
+    background-size: 26px 26px;
+  }
+
+  .sheet .shell {
+    height: 100%;
+    overflow: hidden;
   }
 
   .blank {
-    display: grid;
-    place-items: center;
-    padding: 32px 16px;
-    color: var(--dim);
-    font-size: var(--fs-s);
+    padding: 28px 12px;
+    border: 3px dashed var(--line);
+    border-radius: 16px;
+    background: var(--card);
+    color: #111;
+    text-align: center;
+    font-weight: 700;
   }
 
-  header {
-    display: grid;
-    gap: 10px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--rule);
-    background: var(--plate);
+  .blank p {
+    margin-top: 4px;
+    font-weight: 500;
+    color: var(--sub);
   }
 
-  .title {
-    display: flex;
+  .uname {
+    display: inline-flex;
+    flex: 0 1 auto;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     min-width: 0;
+    font-weight: 800;
   }
 
-  h2 {
-    margin: 0;
-    font-size: var(--fs-m);
-    font-weight: 600;
+  .un {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  .th h2 {
+    margin-right: 0;
+    flex: none;
+  }
+
+  .th {
+    flex-wrap: wrap;
+  }
+
   .kind {
-    font-size: var(--fs-s);
-    color: var(--dim);
-    white-space: nowrap;
+    flex: none;
+    min-height: 26px;
+    margin-left: auto;
+    font-size: 12px;
   }
 
   .controls {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+  }
+
+  .filter {
+    flex: 1 1 200px;
   }
 
   .filter input {
-    width: 180px;
-    height: 30px;
-    padding: 0 10px;
-    border: 1px solid var(--rule);
-    border-radius: 5px;
-    background: var(--bay);
+    width: 100%;
+    min-height: 44px;
     font-size: var(--fs-s);
   }
 
-  .filter input:focus-visible {
-    outline: none;
-    border-color: var(--trace);
-  }
-
-  .spacer {
-    flex: 1;
-  }
-
   .icon {
-    width: 30px;
+    width: 44px;
     padding: 0;
-    justify-content: center;
   }
 
   .scroller {
+    height: clamp(260px, 46vh, 420px);
     overflow: auto;
     overscroll-behavior: contain;
-    padding: 6px 0;
+    padding: 8px 0;
+    border: 3px solid #111;
+    border-radius: 14px;
+    background: var(--term);
+    color: var(--termfg);
+    scrollbar-color: #666 transparent;
+  }
+
+  :global([data-theme='dark']) .scroller {
+    border-color: var(--edge);
+  }
+
+  .sheet .scroller {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 0;
+  }
+
+  .scroller:focus-visible {
+    outline-offset: 2px;
   }
 
   .note {
     margin: 4px 16px 8px;
     font-size: var(--fs-xs);
-    color: var(--dim);
+    color: var(--termdim);
   }
 
   ol {
     list-style: none;
     margin: 0;
     padding: 0;
-    font-size: 12px;
+    font-size: 12.5px;
     line-height: 1.6;
   }
 
@@ -339,22 +369,22 @@
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) 24px;
     column-gap: 12px;
-    padding: 0 8px 0 16px;
-    border-left: 2px solid transparent;
+    padding: 0 8px 0 12px;
+    border-left: 6px solid transparent;
   }
 
   .line:hover,
   .line.picked {
-    background: var(--plate);
+    background: rgb(255 255 255 / 0.08);
   }
 
   .line.err {
-    border-left-color: var(--fail);
-    background: var(--fail-soft);
+    border-left-color: var(--tomato);
+    background: rgb(255 91 63 / 0.18);
   }
 
   time {
-    color: var(--dim);
+    color: var(--termdim);
     user-select: none;
     -webkit-user-select: none;
   }
@@ -378,19 +408,22 @@
     align-self: start;
     display: grid;
     place-items: center;
-    width: 22px;
-    height: 19px;
-    margin-top: 0;
+    width: 24px;
+    height: 20px;
     padding: 0;
     border: 0;
-    border-radius: 3px;
+    border-radius: 4px;
     background: transparent;
-    color: var(--dim);
+    color: var(--termfg);
     opacity: 0;
   }
 
   .copy:hover {
-    color: var(--trace);
+    color: var(--lemon);
+  }
+
+  .copy:focus-visible {
+    outline-color: #8fb0ff;
   }
 
   .line:hover .copy,
@@ -401,30 +434,29 @@
 
   @media (hover: none) {
     .copy {
-      width: 32px;
-      height: 24px;
+      width: 36px;
+      height: 26px;
+      opacity: 0.55;
+    }
+
+    .line.picked .copy {
+      opacity: 1;
     }
   }
 
   footer {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 8px 12px;
     min-height: 40px;
-    padding: 5px 16px;
-    border-top: 1px solid var(--rule);
-    background: var(--plate);
-    font-size: var(--fs-xs);
-    color: var(--dim);
-  }
-
-  footer .btn {
-    height: 26px;
+    font-size: var(--fs-s);
+    font-weight: 700;
   }
 
   .bad {
-    color: var(--fail);
+    color: #7a1200;
   }
 
   :global(body:has(.pane.sheet)) {
@@ -432,16 +464,12 @@
   }
 
   @media (max-width: 560px) {
-    .filter {
-      flex: 1 1 100%;
+    .controls .btn:not(.icon) {
+      flex: 1 1 auto;
     }
 
-    .filter input {
-      width: 100%;
-    }
-
-    .spacer {
-      display: none;
+    .kind {
+      margin-left: 0;
     }
   }
 </style>

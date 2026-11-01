@@ -7,28 +7,34 @@
 <span class="led {tone}" class:pulse aria-hidden="true"></span>
 
 <style>
+  /* Shape and fill carry the state, not colour alone:
+     round = ok, hollow = idle, diamond = problem, striped = busy. */
   .led {
     display: inline-block;
     flex: none;
-    width: 8px;
-    height: 8px;
+    width: 14px;
+    height: 14px;
+    border: 2.5px solid var(--line);
     border-radius: 50%;
-    background: var(--idle);
+    background: var(--lemon);
   }
 
   .ok {
-    background: var(--ok);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 55%, transparent);
+    background: var(--mint);
   }
 
   .warn {
-    background: var(--warn);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--warn) 55%, transparent);
+    background: var(--lemon);
   }
 
   .fail {
-    background: var(--fail);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--fail) 60%, transparent);
+    background: var(--tomato);
+    border-radius: 3px;
+    transform: rotate(45deg);
+  }
+
+  .idle {
+    background: transparent;
   }
 
   .pulse {
@@ -37,7 +43,7 @@
 
   @keyframes blink {
     50% {
-      opacity: 0.25;
+      opacity: 0.3;
     }
   }
 </style>

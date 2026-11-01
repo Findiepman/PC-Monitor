@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { live } from '../lib/live.svelte';
-  import { duration } from '../lib/format';
+  import { currentTheme, onThemeChange, setTheme } from '../lib/theme';
   import Led from './Led.svelte';
 
   let {
@@ -9,113 +10,153 @@
     onsignout,
   }: { hostname: string; onpalette: () => void; onsignout: () => void } = $props();
 
-  let host = $derived(live.history.at(-1));
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+  let dark = $state(currentTheme() === 'dark');
+
+  onMount(() => onThemeChange(() => (dark = currentTheme() === 'dark')));
 </script>
 
-<header>
-  <div class="id">
-    <span class="host mono">{hostname || '…'}</span>
-    {#if host}
-      <span class="stat mono">up {duration(host.uptime)}</span>
-      {#if host.load.length}
-        <span class="stat mono load" title="Load average over 1, 5 and 15 minutes">
-          load {host.load.map((l) => l.toFixed(2)).join(' ')}
-        </span>
-      {/if}
-    {/if}
-  </div>
+<header class="top">
+  <span class="logo"><i class="dot" aria-hidden="true"></i><b>dashd</b></span>
+  <span class="hostchip mono" title={hostname}>{hostname || '…'}</span>
+  <span class="conn pill plain" role="status">
+    <Led tone={live.status === 'live' ? 'ok' : 'warn'} pulse={live.status !== 'live'} />
+    <span>{live.status === 'live' ? 'Live' : live.status === 'connecting' ? 'Connecting' : 'Reconnecting'}</span>
+  </span>
 
-  <div class="tools">
-    <span class="conn" role="status">
-      <Led tone={live.status === 'live' ? 'ok' : 'warn'} pulse={live.status !== 'live'} />
-      <span class="conn-text">{live.status === 'live' ? 'Live' : live.status === 'connecting' ? 'Connecting' : 'Reconnecting'}</span>
-    </span>
-    <button class="btn" onclick={onpalette}>
-      Commands <kbd>{isMac ? '⌘' : 'Ctrl'} K</kbd>
-    </button>
-    <button class="btn quiet" onclick={onsignout}>Sign out</button>
-  </div>
+  <span class="grow"></span>
+
+  <button class="btn palette" onclick={onpalette} aria-keyshortcuts="Control+K Meta+K">
+    Commands <kbd>{isMac ? '⌘' : 'Ctrl'} K</kbd>
+  </button>
+  <button
+    class="switch"
+    role="switch"
+    aria-checked={dark}
+    aria-label="Dark mode"
+    title="Dark mode"
+    onclick={() => setTheme(dark ? 'light' : 'dark')}
+  >
+    <span class="trk"><span class="knob"></span></span>
+  </button>
+  <button class="btn" onclick={onsignout}>Sign out</button>
 </header>
 
 <style>
-  header {
+  .top {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    min-height: 48px;
-    padding: 8px 16px;
-    border-bottom: 1px solid var(--rule);
-    background: var(--plate);
-  }
-
-  .id {
-    display: flex;
-    align-items: baseline;
     flex-wrap: wrap;
-    column-gap: 16px;
+    align-items: center;
+    gap: 10px 12px;
+    margin-bottom: 18px;
+  }
+
+  .grow {
+    flex: 1;
+  }
+
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 14px 4px 10px;
+    background: var(--lemon);
+    color: #111;
+    border: 3px solid var(--edge);
+    border-radius: 16px;
+    box-shadow: 4px 4px 0 var(--edge);
+    transform: rotate(-1.5deg);
+    transition: transform 0.25s cubic-bezier(0.3, 1.9, 0.5, 1);
+  }
+
+  .logo:hover {
+    transform: rotate(2deg) scale(1.04);
+  }
+
+  .logo b {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    font-stretch: 75%;
+    line-height: 1.1;
+  }
+
+  .dot {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border: 3px solid #111;
+    border-radius: 50%;
+    background: var(--tomato);
+    animation: swap 2.4s infinite;
+  }
+
+  @keyframes swap {
+    50% {
+      background: var(--mint);
+    }
+  }
+
+  .hostchip {
     min-width: 0;
-  }
-
-  .host {
-    font-size: var(--fs-m);
-    font-weight: 600;
-    font-stretch: 100%;
-  }
-
-  .stat {
-    font-size: var(--fs-xs);
-    color: var(--dim);
+    max-width: 100%;
+    padding: 4px 10px;
+    border: 3px solid var(--edge);
+    border-radius: 12px;
+    background: var(--card);
+    color: var(--fg);
+    font-size: 15px;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .tools {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
   .conn {
-    display: inline-flex;
-    align-items: center;
+    --line: var(--edge);
     gap: 8px;
-    margin-right: 8px;
-    font-size: var(--fs-s);
-    color: var(--dim);
+    min-height: 34px;
+    padding-left: 8px;
+    background: var(--card);
+    color: var(--fg);
   }
 
-  .quiet {
-    border-color: transparent;
-    background: transparent;
-    color: var(--dim);
+  .palette {
+    min-width: 200px;
+    justify-content: flex-start;
   }
 
-  @media (max-width: 640px) {
-    .load,
-    .tools kbd {
+  .palette kbd {
+    margin-left: auto;
+  }
+
+  .switch:focus-visible {
+    border-radius: 999px;
+  }
+
+  @media (max-width: 560px) {
+    .grow {
       display: none;
     }
 
-    .conn-text {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
+    .palette {
+      flex: 1;
+      min-width: 0;
     }
 
-    header {
-      padding-right: 8px;
+    .palette kbd {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot {
+      animation: none;
     }
 
-    .tools {
-      gap: 4px;
-    }
-
-    .conn {
-      margin-right: 0;
+    .logo {
+      transform: none;
+      transition: none;
     }
   }
 </style>
