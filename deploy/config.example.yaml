@@ -42,3 +42,17 @@ providers:
     # Client API key from Account > API Credentials (starts with ptlc_).
     api_key: env:DASHD_PTERODACTYL_KEY
     all_servers: false   # true lists every server, needs a root admin key
+
+# One-line description shown on each service tile ("what is it, what does it
+# do"). dashd already knows common services (wings, playit, pteroq,
+# cloudflared, nginx, the Pterodactyl panel, MariaDB/MySQL, Postgres, Redis,
+# Uptime Kuma, and a generic line for game servers). Add your own apps here or
+# override a built-in one. Key: the unit's name ("strongroom") or its full id
+# ("docker:strongroom", "systemd:wings.service"); a bare name matches in
+# every provider. An empty value hides the
+# line. Restart dashd after editing: sudo systemctl restart dashd
+# about:
+#   strongroom: "What strongroom does, in one line."
+#   kivo-roadmap: "What kivo-roadmap does, in one line."
+#   systemd:wings.service: "Your own wording for Wings."
+#   redis: ""

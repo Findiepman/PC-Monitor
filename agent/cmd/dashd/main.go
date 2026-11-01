@@ -20,6 +20,7 @@ import (
 	"github.com/mdp/qrterminal/v3"
 	"golang.org/x/term"
 
+	"github.com/findiepman/dashd/internal/about"
 	"github.com/findiepman/dashd/internal/api"
 	"github.com/findiepman/dashd/internal/audit"
 	"github.com/findiepman/dashd/internal/auth"
@@ -118,6 +119,7 @@ func serve(args []string) error {
 	defer auditLog.Close()
 
 	hub := api.NewHub(reg, collector, log)
+	hub.About = about.New(cfg.About)
 	go hub.Run(ctx)
 
 	srv := &api.Server{

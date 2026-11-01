@@ -89,3 +89,24 @@ func TestNonLoopback(t *testing.T) {
 		t.Error("0.0.0.0 is not loopback")
 	}
 }
+
+func TestAbout(t *testing.T) {
+	c, err := Parse([]byte(base))
+	if err != nil || c.About != nil {
+		t.Fatalf("config without about: %v %v", err, c.About)
+	}
+	c, err = Parse([]byte(base + `
+about:
+  docker:strongroom: My password vault.
+  redis: ""
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.About["docker:strongroom"] != "My password vault." {
+		t.Errorf("about = %v", c.About)
+	}
+	if v, ok := c.About["redis"]; !ok || v != "" {
+		t.Errorf("empty value should be kept to hide a description: %v", c.About)
+	}
+}

@@ -59,6 +59,9 @@ type Unit struct {
 	MemLimit *uint64           `json:"memLimit"`
 	Actions  []string          `json:"actions"`
 	Meta     map[string]string `json:"meta,omitempty"`
+	// About is a one-line description of what the unit is and does. It is
+	// filled in by the about package, not by providers.
+	About string `json:"about,omitempty"`
 }
 
 // LogLine is a single line of output.

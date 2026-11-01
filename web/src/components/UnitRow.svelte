@@ -63,6 +63,10 @@
     </span>
   </div>
 
+  {#if unit.about}
+    <p class="about" title={unit.about}>{unit.about}</p>
+  {/if}
+
   <div class="umeta">
     <span class="detail">{detail}</span>
     <span title="Uptime">up {unit.state === 'running' ? duration(unit.uptime) : '–'}</span>
@@ -180,6 +184,18 @@
     min-height: 26px;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .about {
+    margin: -4px 0 0;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--sub);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .umeta {

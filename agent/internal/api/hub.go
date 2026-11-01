@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/findiepman/dashd/internal/about"
 	"github.com/findiepman/dashd/internal/host"
 	"github.com/findiepman/dashd/internal/provider"
 )
@@ -37,6 +38,10 @@ type Hub struct {
 	units   UnitsSnapshot
 
 	refresh chan struct{}
+
+	// About fills in each unit's description. Set it before Run; nil still
+	// uses the built-in descriptions.
+	About *about.Book
 }
 
 func NewHub(reg *provider.Registry, hc host.Collector, log *slog.Logger) *Hub {
@@ -110,6 +115,7 @@ func (h *Hub) pollUnits(ctx context.Context) {
 	cctx, cancel := context.WithTimeout(ctx, unitsInterval-500*time.Millisecond)
 	defer cancel()
 	units, errs := h.reg.ListAll(cctx)
+	h.About.Apply(units)
 	snap := UnitsSnapshot{Units: units, Errors: errs, T: time.Now().UnixMilli()}
 	h.mu.Lock()
 	h.units = snap

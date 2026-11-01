@@ -78,6 +78,10 @@ Everything in the UI is a *unit* from a *provider*. To add one (pm2, a remote Wi
 
 The frontend picks up the new group, its LEDs, actions and logs without changes. Discord bots running in Docker, as systemd units or on Pterodactyl already work: add them to the matching config.
 
+## Service descriptions
+
+Each service tile shows one line saying what the service is and does. Common services (the systemd units wings, playit, pteroq, cloudflared, nginx, mariadb, mysql, postgresql and redis; Docker containers from the Pterodactyl panel, MariaDB, MySQL, Postgres, Redis, nginx, cloudflared and Uptime Kuma images; and Pterodactyl game servers in general) have built-in descriptions in `agent/internal/about/about.go`. Your own apps don't have one until you add it. To add or change one, edit the `about:` block in `/etc/dashd/config.yaml` (see `deploy/config.example.yaml`), then run `sudo systemctl restart dashd`. A bare name like `redis` matches that name everywhere; use `docker:redis` to target one provider. You don't need to rebuild. Changing the built-in text does need a rebuild.
+
 ## Keyboard
 
 | Key | Action |

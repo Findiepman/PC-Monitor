@@ -144,6 +144,9 @@
         <p>Pick a service to follow its logs.</p>
       </div>
     {:else}
+      {#if unit.about}
+        <p class="about" title={unit.about}>{unit.about}</p>
+      {/if}
       <div class="controls">
         <label class="filter">
           <span class="sr-only">Filter log lines</span>
@@ -268,6 +271,22 @@
     margin-top: 4px;
     font-weight: 500;
     color: var(--sub);
+  }
+
+  .about {
+    margin: 0;
+    padding: 0 2px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--sub);
+    overflow-wrap: anywhere;
+    /* a long description from config must not crowd out the log on phones */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
+    flex-shrink: 0;
   }
 
   .uname {

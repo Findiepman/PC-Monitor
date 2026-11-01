@@ -23,6 +23,7 @@ export interface Unit {
   memLimit: number | null;
   actions: Action[];
   meta?: Record<string, string>;
+  about?: string;
 }
 
 export interface UnitsSnapshot {

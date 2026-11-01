@@ -24,6 +24,10 @@ type Config struct {
 	Auth      Auth      `yaml:"auth"`
 	Audit     Audit     `yaml:"audit"`
 	Providers Providers `yaml:"providers"`
+	// About sets or overrides the one-line description shown on a service
+	// tile. Keys are a unit id ("docker:redis", "systemd:wings.service") or a
+	// bare name ("redis"); an empty value hides the description.
+	About map[string]string `yaml:"about"`
 }
 
 type Auth struct {
