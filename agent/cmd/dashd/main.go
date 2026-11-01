@@ -243,7 +243,11 @@ func initConfig(args []string) error {
 	if *mockMode {
 		b.WriteString("mock: true\n")
 	}
-	fmt.Fprintf(&b, "\nauth:\n  username: %s\n  password_hash: %q\n  totp_secret: %s\n  session_ttl: 12h\n", *user, hash, secret)
+	ttl := "168h"
+	if *mockMode {
+		ttl = "12h"
+	}
+	fmt.Fprintf(&b, "\nauth:\n  username: %s\n  password_hash: %q\n  totp_secret: %s\n  session_ttl: %s\n", *user, hash, secret, ttl)
 	if *mockMode {
 		b.WriteString("  insecure_cookie: true\n")
 	}
@@ -253,8 +257,13 @@ func initConfig(args []string) error {
 providers:
   docker:
     socket: /var/run/docker.sock
+
+  # The services dashd shows and can restart. Nothing else is visible to it.
   systemd:
     units: [wings, playit, pteroq, cloudflared]
+
+  # Remove the # in front of these three lines once the API key is in
+  # /etc/dashd/env.
   # pterodactyl:
   #   url: https://panel.findiepman.dev
   #   api_key: env:DASHD_PTERODACTYL_KEY
