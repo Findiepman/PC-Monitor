@@ -14,14 +14,11 @@
   let {
     unit,
     sheet = false,
-    nologs,
     onclose,
     filterInput = $bindable(),
   }: {
     unit: Unit | undefined;
     sheet?: boolean;
-    /** Provider whose units have no logs in dashd (pm2): show a note instead. */
-    nologs?: string;
     onclose?: () => void;
     filterInput?: HTMLInputElement;
   } = $props();
@@ -40,7 +37,6 @@
   let scroller: HTMLDivElement | undefined = $state();
 
   let unitId = $derived(unit?.id);
-  let noLogs = $derived(!!unit && unit.provider === nologs);
 
   $effect(() => {
     const id = unitId;
@@ -49,7 +45,7 @@
     ended = null;
     picked = -1;
     follow = true;
-    if (!id || noLogs) return;
+    if (!id) return;
 
     let stop: (() => void) | undefined;
     // Debounce so holding j/k through the list doesn't open a stream per row.
@@ -146,11 +142,6 @@
       <div class="blank">
         <b>No service selected</b>
         <p>Pick a service to follow its logs.</p>
-      </div>
-    {:else if noLogs}
-      <div class="blank">
-        <b>Bot logs stay on the server</b>
-        <p>dashd can't read pm2's logs. Over SSH: <span class="mono">pm2 logs {unit.name}</span></p>
       </div>
     {:else}
       {#if unit.about}

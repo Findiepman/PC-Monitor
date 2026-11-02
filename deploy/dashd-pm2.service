@@ -6,17 +6,18 @@
 # starts pm2 itself). Every 10 seconds it writes a filtered list to
 # /run/pm2-status/pm2.json: name, status, uptime, CPU, memory, restarts, bot
 # account names and the Discord names the bots log in as (read from their pm2
-# logs). The dashboard's Start/Restart/Stop buttons reach it through
+# logs). The dashboard's Start/Restart/Stop buttons and log pane reach it through
 # /run/pm2-status/control.sock, which only the dashd user can use (an ACL
 # entry; no group membership needed).
-# Environments and tokens never leave this process.
+# Process environments never leave this process. Log lines do: anything a
+# bot prints, tokens included, shows in the dashboard's log pane.
 #
 # If pm2 runs under another user, change `fin` in all five places: After=,
 # User=, Group=, PM2_HOME and the bots.json path. The -accounts
 # flag lists the keys of that bots.json as the accounts a process signs in;
 # drop it or add more (one -accounts per process).
 [Unit]
-Description=dashd pm2 helper (Discord bot list and start/stop/restart)
+Description=dashd pm2 helper (Discord bot list, start/stop/restart, logs)
 After=pm2-fin.service
 
 [Service]

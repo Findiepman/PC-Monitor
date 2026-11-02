@@ -237,7 +237,7 @@ If it isn't running, `journalctl -u dashd -n 30 --no-pager` shows why. The error
 
 ## Step 8b. Show and control your Discord bots (pm2) 🐧 Server
 
-Skip this if you don't run bots with pm2. Everything pm2 runs shows up as a **Discord bots** group under Services and on its own **Discord bots** page, with the Discord name each bot logged in as, and hold-to-confirm Start, Restart and Stop buttons. dashd can't look inside your home folder, so a small helper runs as your user: it writes the list to `/run/pm2-status/pm2.json` and takes the button presses on `/run/pm2-status/control.sock`.
+Skip this if you don't run bots with pm2. Everything pm2 runs shows up as a **Discord bots** group under Services and on its own **Discord bots** page, with the Discord name each bot logged in as, hold-to-confirm Start, Restart and Stop buttons, and their logs in the log pane (like `pm2 logs`). Anything a bot prints shows there, so a bot that logs its token at startup shows it to whoever is signed in to the dashboard. dashd can't look inside your home folder, so a small helper runs as your user: it writes the list to `/run/pm2-status/pm2.json` and takes the button presses and log requests on `/run/pm2-status/control.sock`.
 
 ```bash
 nano ~/dashd/deploy/dashd-pm2.service

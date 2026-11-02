@@ -42,6 +42,8 @@ type Exporter struct {
 	// kick asks Run for a snapshot now (after an action).
 	kick  chan struct{}
 	actMu sync.Mutex
+	// logSlots caps open log streams.
+	logSlots chan struct{}
 	// names caches the Discord names found in each log, by path.
 	names map[string]nameCache
 	now   func() time.Time
@@ -64,7 +66,7 @@ func NewExporter(o ExportOptions) *Exporter {
 		o.Log = slog.Default()
 	}
 	e := &Exporter{opts: o, readFile: os.ReadFile, now: time.Now, lastWarn: map[string]string{},
-		kick: make(chan struct{}, 1), names: map[string]nameCache{}}
+		kick: make(chan struct{}, 1), names: map[string]nameCache{}, logSlots: make(chan struct{}, maxLogStreams)}
 	sock := filepath.Join(o.Home, "rpc.sock")
 	e.list = func(ctx context.Context) ([]byte, error) { return monitorData(ctx, sock) }
 	e.rpc = func(ctx context.Context, method string, args ...any) ([]json.RawMessage, error) {

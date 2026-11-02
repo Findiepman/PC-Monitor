@@ -22,17 +22,24 @@ import (
 // Protocol: one JSON line each way per connection.
 //   request: {"action":"restart","id":0,"name":"my-bot"}
 //   reply:   {"ok":true} or {"error":"why"}
+// A logs request (logs.go) is answered with a stream of lines instead:
+//   request: {"action":"logs","id":0,"name":"my-bot","tail":500}
+//   reply:   {"t":0,"text":"..."} ... until either side hangs up, or {"error":"why"}
+//
 // The socket is mode 0600 plus an ACL entry for the dashd user, so only
 // dashd (and root) can use it, and the helper needs no group membership: an
-// extra group would also let it read /etc/dashd/config.yaml. The helper checks every request against pm2's live list:
-// the pm2 id and the name must still belong together, so a request made from
-// an old page can't hit a process that took over the id.
+// extra group would also let it read /etc/dashd/config.yaml. The helper
+// checks every request against pm2's live list: the pm2 id and the name must
+// still belong together, so a request from an old page can't hit a process
+// that took over the id.
 
 // ControlRequest is one action request from dashd.
 type ControlRequest struct {
 	Action string `json:"action"`
 	ID     int    `json:"id"`
 	Name   string `json:"name"`
+	// Tail is how many old lines a logs request wants first.
+	Tail int `json:"tail,omitempty"`
 }
 
 type controlReply struct {
@@ -109,6 +116,9 @@ func (e *Exporter) handleControl(ctx context.Context, c net.Conn) {
 	var reply controlReply
 	if err := json.Unmarshal(line, &req); err != nil {
 		reply.Error = "unreadable request"
+	} else if req.Action == "logs" {
+		e.streamLogs(ctx, c, req)
+		return
 	} else if err := e.act(ctx, req); err != nil {
 		reply.Error = err.Error()
 	} else {
@@ -190,21 +200,27 @@ func (e *Exporter) kickSoon() {
 	time.AfterFunc(5*time.Second, kick)
 }
 
-// SendControl is dashd's side: one request over the helper's control socket.
-func SendControl(ctx context.Context, sock string, req ControlRequest) error {
-	var d net.Dialer
-	c, err := d.DialContext(ctx, "unix", sock)
+// controlDialError explains why dashd couldn't reach the helper.
+func controlDialError(err error) error {
 	switch {
 	case errors.Is(err, syscall.ECONNREFUSED):
 		// The socket file is kept across a restart, so this is the gap while
 		// the helper comes back up.
 		return errors.New("the dashd-pm2 helper is restarting. Try again in a few seconds")
 	case errors.Is(err, fs.ErrNotExist):
-		return errors.New("the dashd-pm2 helper isn't taking actions. On the server: cd ~/dashd && sudo ./deploy/update.sh (DEPLOY.md step 8b)")
+		return errors.New("the dashd-pm2 helper isn't taking requests. On the server, run deploy/update.sh in the dashd checkout (DEPLOY.md step 8b)")
 	case errors.Is(err, fs.ErrPermission):
 		return errors.New("dashd isn't allowed to use the helper's control socket. Check `-control-user dashd` in dashd-pm2.service and `getfacl /run/pm2-status/control.sock`")
-	case err != nil:
-		return err
+	}
+	return err
+}
+
+// SendControl is dashd's side: one request over the helper's control socket.
+func SendControl(ctx context.Context, sock string, req ControlRequest) error {
+	var d net.Dialer
+	c, err := d.DialContext(ctx, "unix", sock)
+	if err != nil {
+		return controlDialError(err)
 	}
 	defer c.Close()
 	if dl, ok := ctx.Deadline(); ok {

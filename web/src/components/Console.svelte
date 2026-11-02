@@ -59,10 +59,9 @@
     }
   });
 
-  // Fall back to the first unit when nothing (or a vanished unit) is selected;
-  // prefer one with logs, so the log tile doesn't open on a bot.
+  // Fall back to the first unit when nothing (or a vanished unit) is selected.
   $effect(() => {
-    if (ordered.length && !selected && !narrow) selectedId = (ordered.find((u) => u.provider !== BOTS) ?? ordered[0]).id;
+    if (ordered.length && !selected && !narrow) selectedId = ordered[0].id;
   });
 
   $effect(() => {
@@ -204,7 +203,7 @@
         arm('stop');
         break;
       case 'l':
-        if (selected && selected.provider !== BOTS && onscreen.some((x) => x.id === selected.id)) showLogs(selected);
+        if (selected && onscreen.some((x) => x.id === selected.id)) showLogs(selected);
         break;
       case '/':
         e.preventDefault();
@@ -232,7 +231,16 @@
   />
 
   {#if view === 'bots'}
-    <Bots provider={botsProvider} {metaState} {pending} onaction={run} />
+    <Bots
+      provider={botsProvider}
+      {metaState}
+      {pending}
+      onaction={run}
+      onlogs={(u) => {
+        go('home');
+        showLogs(u);
+      }}
+    />
   {:else}
     <main class="bento">
       <HostTrace />
@@ -251,7 +259,7 @@
       <Activity />
 
       {#if !narrow}
-        <LogPane unit={selected} nologs={BOTS} bind:filterInput />
+        <LogPane unit={selected} bind:filterInput />
       {:else}
         <section class="tile tile-lilac t-logs" aria-labelledby="h-logs">
           <header class="th"><h2 id="h-logs">Logs</h2></header>
@@ -263,7 +271,7 @@
           {/if}
         </section>
         {#if sheetOpen && selected}
-          <LogPane unit={selected} nologs={BOTS} sheet onclose={() => (sheetOpen = false)} bind:filterInput />
+          <LogPane unit={selected} sheet onclose={() => (sheetOpen = false)} bind:filterInput />
         {/if}
       {/if}
     </main>
@@ -272,7 +280,6 @@
 
 <Palette
   bind:open={paletteOpen}
-  nologs={BOTS}
   {view}
   botsLabel={botsProvider?.label}
   onview={go}

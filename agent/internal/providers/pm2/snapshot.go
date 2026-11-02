@@ -54,8 +54,9 @@ type Proc struct {
 	// Logins maps an account to its Discord name, for processes that sign in
 	// several bots ("Manager is signed in as 'Sigmabot1'").
 	Logins map[string]string `json:"logins,omitempty"`
-	// outLog is pm2's stdout log for the process; it never leaves the helper.
-	outLog string
+	// outLog and errLog are pm2's log files for the process; they never
+	// leave the helper.
+	outLog, errLog string
 }
 
 // jlistProc picks out the fields we use from pm2's process list. Everything
@@ -73,6 +74,7 @@ type jlistProc struct {
 		Restarts    int    `json:"restart_time"`
 		Interpreter string `json:"exec_interpreter"`
 		OutLog      string `json:"pm_out_log_path"`
+		ErrLog      string `json:"pm_err_log_path"`
 	} `json:"pm2_env"`
 }
 
@@ -93,6 +95,7 @@ func ParseProcs(out []byte) ([]Proc, error) {
 			Restarts: r.Env.Restarts,
 			Runtime:  runtimeName(r.Env.Interpreter),
 			outLog:   r.Env.OutLog,
+			errLog:   r.Env.ErrLog,
 		}
 		if r.Monit != nil {
 			p.CPU, p.Mem = r.Monit.CPU, r.Monit.Memory

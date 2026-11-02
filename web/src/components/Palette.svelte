@@ -8,7 +8,6 @@
 
   let {
     open = $bindable(false),
-    nologs,
     view = 'home',
     botsLabel,
     onview,
@@ -17,8 +16,6 @@
     onsignout,
   }: {
     open: boolean;
-    /** Provider whose units have no logs in dashd (pm2). */
-    nologs?: string;
     view?: 'home' | 'bots';
     /** Set when the bots page exists. */
     botsLabel?: string;
@@ -48,9 +45,7 @@
       out.push({ key: 'view:home', label: 'Open dashboard', destructive: false, run: () => onview('home') });
     }
     for (const u of live.units) {
-      if (u.provider !== nologs) {
-        out.push({ key: `${u.id}:logs`, label: `Show logs for ${u.name}`, unit: u, destructive: false, run: () => onlogs(u) });
-      }
+      out.push({ key: `${u.id}:logs`, label: `Show logs for ${u.name}`, unit: u, destructive: false, run: () => onlogs(u) });
       for (const a of u.actions) {
         out.push({
           key: `${u.id}:${a}`,

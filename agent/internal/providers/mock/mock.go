@@ -131,6 +131,40 @@ func mockPM2() provider.Provider {
 		}
 		return errors.New("that bot isn't in pm2 anymore")
 	})
+	p.SetLogs(func(ctx context.Context, r pm2.ControlRequest) (<-chan provider.LogLine, error) {
+		out := make(chan provider.LogLine, 64)
+		go func() {
+			defer close(out)
+			say := func(l provider.LogLine) bool {
+				select {
+				case out <- l:
+					return true
+				case <-ctx.Done():
+					return false
+				}
+			}
+			for _, s := range []string{"Refreshing 11 application command(s)...", "Ready! Logged in as AftermathCoordinator#3579", "Loaded 2 active poll(s)"} {
+				if !say(provider.LogLine{Text: s}) {
+					return
+				}
+			}
+			say(provider.LogLine{Text: "── error log (" + r.Name + "-error.log) ──"})
+			say(provider.LogLine{Err: true, Text: "DiscordAPIError[50001]: Missing Access"})
+			t := time.NewTicker(3 * time.Second)
+			defer t.Stop()
+			for n := 1; ; n++ {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+				}
+				if !say(provider.LogLine{T: time.Now().UnixMilli(), Text: fmt.Sprintf("heartbeat %d: %d ms", n, 40+rand.IntN(60))}) {
+					return
+				}
+			}
+		}()
+		return out, nil
+	})
 	return p
 }
 

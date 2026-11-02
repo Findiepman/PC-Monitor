@@ -57,7 +57,7 @@
   aria-current={selected ? 'true' : undefined}
 >
   <div class="uh">
-    <button class="pick" onclick={onselect} aria-label="{unit.kind === 'bot' ? 'Select' : 'Show logs for'} {unit.name}, {stateLabel(unit)}">
+    <button class="pick" onclick={onselect} aria-label="Show logs for {unit.name}, {stateLabel(unit)}">
       <span class="name">{unit.name}</span>
     </button>
     <span class="state pill {busy ? 'warn' : t === 'fail' ? 'fail' : t === 'ok' ? 'ok' : t === 'warn' ? 'warn' : 'idle'}">

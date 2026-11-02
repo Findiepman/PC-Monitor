@@ -207,9 +207,11 @@
       justify-content: center;
     }
 
+    /* Live, the theme switch, Commands and Sign out don't fit one phone row,
+       so Commands gets a full-width row of its own, above the page tabs. */
     .palette {
-      flex: 1;
-      min-width: 0;
+      order: 9;
+      flex: 1 1 100%;
     }
 
     .palette kbd {

@@ -27,8 +27,6 @@ const maxProcs = 500
 // maxSnapshot caps how much of the file is read.
 const maxSnapshot = 1 << 20
 
-var errNoLogs = errors.New("dashd can't show pm2 logs yet. On the server: pm2 logs <name>")
-
 // Provider lists pm2 processes from the helper's snapshot and sends start,
 // stop and restart to the helper's control socket.
 type Provider struct {
@@ -39,6 +37,8 @@ type Provider struct {
 	now     func() time.Time
 	// send delivers an action to the helper (SendControl on the socket).
 	send func(ctx context.Context, req ControlRequest) error
+	// logs opens a log stream through the helper (streamFromHelper).
+	logs func(ctx context.Context, req ControlRequest) (<-chan provider.LogLine, error)
 }
 
 func New(cfg config.PM2) *Provider {
@@ -50,7 +50,10 @@ func New(cfg config.PM2) *Provider {
 // tests and mock mode.
 func NewWithReader(cfg config.PM2, read func() ([]byte, error)) *Provider {
 	p := &Provider{label: cfg.Label, path: cfg.Path, exclude: map[string]bool{}, read: read, now: time.Now,
-		send: func(ctx context.Context, req ControlRequest) error { return SendControl(ctx, cfg.Control, req) }}
+		send: func(ctx context.Context, req ControlRequest) error { return SendControl(ctx, cfg.Control, req) },
+		logs: func(ctx context.Context, req ControlRequest) (<-chan provider.LogLine, error) {
+			return streamFromHelper(ctx, cfg.Control, req)
+		}}
 	for _, n := range cfg.Exclude {
 		p.exclude[strings.ToLower(strings.TrimSpace(n))] = true
 	}
@@ -60,6 +63,11 @@ func NewWithReader(cfg config.PM2, read func() ([]byte, error)) *Provider {
 // SetSender replaces how actions reach the helper. Mock mode uses it.
 func (p *Provider) SetSender(send func(ctx context.Context, req ControlRequest) error) {
 	p.send = send
+}
+
+// SetLogs replaces how log streams are opened. Mock mode uses it.
+func (p *Provider) SetLogs(logs func(ctx context.Context, req ControlRequest) (<-chan provider.LogLine, error)) {
+	p.logs = logs
 }
 
 func (p *Provider) Name() string  { return "pm2" }
@@ -260,8 +268,17 @@ func (p *Provider) Do(ctx context.Context, id, action string) error {
 	return provider.ErrUnknownUnit
 }
 
-func (p *Provider) Logs(context.Context, string, int) (<-chan provider.LogLine, error) {
-	return nil, errNoLogs
+func (p *Provider) Logs(ctx context.Context, id string, tail int) (<-chan provider.LogLine, error) {
+	procs, now, err := p.snapshot()
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range bind(procs, p.exclude, now) {
+		if b.unit.ID == id {
+			return p.logs(ctx, ControlRequest{Action: "logs", ID: b.proc.ID, Name: b.proc.Name, Tail: tail})
+		}
+	}
+	return nil, provider.ErrUnknownUnit
 }
 
 func readCapped(path string) ([]byte, error) {

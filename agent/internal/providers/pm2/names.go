@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"syscall"
 
 	"github.com/findiepman/dashd/internal/provider"
 )
@@ -58,10 +59,18 @@ func DiscordNames(log []byte) (self string, logins map[string]string) {
 	return self, logins
 }
 
+// openLog opens a log file without blocking. A path can be swapped for a FIFO
+// between a Stat and an Open, and opening a FIFO with no writer would block
+// forever; O_NONBLOCK makes that open return at once, and callers check the
+// handle's own Stat before reading.
+func openLog(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+}
+
 // readTail returns up to n bytes from the end of a regular file, starting at
 // a line boundary.
 func readTail(path string, n int64) ([]byte, os.FileInfo, error) {
-	f, err := os.Open(path)
+	f, err := openLog(path)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -79,8 +88,12 @@ func readTail(path string, n int64) ([]byte, os.FileInfo, error) {
 		return nil, st, err
 	}
 	if off > 0 {
+		// Started mid-line: drop up to the first newline; with none, the
+		// whole window is the middle of one huge line.
 		if i := bytes.IndexByte(buf, '\n'); i >= 0 {
 			buf = buf[i+1:]
+		} else {
+			buf = nil
 		}
 	}
 	return buf, st, nil

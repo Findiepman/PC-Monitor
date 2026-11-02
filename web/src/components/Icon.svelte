@@ -1,5 +1,8 @@
 <script lang="ts">
-  let { name, size = 14 }: { name: 'restart' | 'stop' | 'start' | 'kill' | 'copy' | 'check' | 'download' | 'close'; size?: number } =
+  let {
+    name,
+    size = 14,
+  }: { name: 'restart' | 'stop' | 'start' | 'kill' | 'copy' | 'check' | 'download' | 'close' | 'logs'; size?: number } =
     $props();
 </script>
 
@@ -16,6 +19,8 @@
   {:else if name === 'copy'}
     <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
     <path d="M10.5 3.5v-.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" />
+  {:else if name === 'logs'}
+    <path d="M3 4h10M3 8h10M3 12h6" />
   {:else if name === 'check'}
     <path d="M3 8.5l3 3 7-7" />
   {:else if name === 'download'}

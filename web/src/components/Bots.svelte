@@ -12,11 +12,13 @@
     metaState,
     pending,
     onaction,
+    onlogs,
   }: {
     provider: Provider | undefined;
     metaState: 'loading' | 'ok' | 'failed';
     pending: Record<string, Action>;
     onaction: (u: Unit, a: Action) => void;
+    onlogs: (u: Unit) => void;
   } = $props();
 
   let bots = $derived(provider ? live.units.filter((u) => u.provider === provider.name) : []);
@@ -49,7 +51,7 @@
     </header>
     <p class="sub">
       What pm2 runs on this server, refreshed every few seconds. Hold a button until it fills to start, restart or
-      stop a bot. Logs stay on the server: <span class="mono">pm2 logs &lt;name&gt;</span>.
+      stop a bot; Logs opens its output on the dashboard.
     </p>
   </section>
 
@@ -124,25 +126,26 @@
             </div>
           {/if}
 
-          {#if b.actions.length}
-            <div class="bacts">
-              {#if b.actions.includes('start')}
-                <HoldButton label="Start {b.name}" tone="mint" disabled={busy} onconfirm={() => onaction(b, 'start')}>
-                  <Icon name="start" size={16} /><span>Start</span>
-                </HoldButton>
-              {/if}
-              {#if b.actions.includes('restart')}
-                <HoldButton label="Restart {b.name}" tone="lemon" disabled={busy} onconfirm={() => onaction(b, 'restart')}>
-                  <Icon name="restart" size={16} /><span>Restart</span>
-                </HoldButton>
-              {/if}
-              {#if b.actions.includes('stop')}
-                <HoldButton label="Stop {b.name}" tone="tomato" danger disabled={busy} onconfirm={() => onaction(b, 'stop')}>
-                  <Icon name="stop" size={16} /><span>Stop</span>
-                </HoldButton>
-              {/if}
-            </div>
-          {/if}
+          <div class="bacts">
+            <button class="btn" onclick={() => onlogs(b)} aria-label="Show logs for {b.name}">
+              <Icon name="logs" size={16} /><span>Logs</span>
+            </button>
+            {#if b.actions.includes('start')}
+              <HoldButton label="Start {b.name}" tone="mint" disabled={busy} onconfirm={() => onaction(b, 'start')}>
+                <Icon name="start" size={16} /><span>Start</span>
+              </HoldButton>
+            {/if}
+            {#if b.actions.includes('restart')}
+              <HoldButton label="Restart {b.name}" tone="lemon" disabled={busy} onconfirm={() => onaction(b, 'restart')}>
+                <Icon name="restart" size={16} /><span>Restart</span>
+              </HoldButton>
+            {/if}
+            {#if b.actions.includes('stop')}
+              <HoldButton label="Stop {b.name}" tone="tomato" danger disabled={busy} onconfirm={() => onaction(b, 'stop')}>
+                <Icon name="stop" size={16} /><span>Stop</span>
+              </HoldButton>
+            {/if}
+          </div>
         </li>
       {/each}
     </ul>

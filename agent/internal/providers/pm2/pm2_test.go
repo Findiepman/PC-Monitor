@@ -279,8 +279,17 @@ func TestList(t *testing.T) {
 	if units[1].Meta["accounts"] != "Manager\tSigmabot1\nDaryl" {
 		t.Errorf("accounts = %q", units[1].Meta["accounts"])
 	}
-	if _, err := p.Logs(context.Background(), "my-bot", 10); err == nil {
-		t.Error("logs should explain they aren't available")
+	var asked ControlRequest
+	p.SetLogs(func(_ context.Context, r ControlRequest) (<-chan provider.LogLine, error) {
+		asked = r
+		return nil, nil
+	})
+	if _, err := p.Logs(context.Background(), "my-bot", 10); err != nil ||
+		asked != (ControlRequest{Action: "logs", ID: 0, Name: "my-bot", Tail: 10}) {
+		t.Errorf("logs request = %+v, %v", asked, err)
+	}
+	if _, err := p.Logs(context.Background(), "nope", 10); err != provider.ErrUnknownUnit {
+		t.Error("logs for an unknown bot")
 	}
 }
 
@@ -301,7 +310,7 @@ func TestDo(t *testing.T) {
 			t.Errorf("%s %s: %v", c.action, c.id, err)
 		}
 	}
-	want := []ControlRequest{{"restart", 0, "my-bot"}, {"start", 4, "bot"}, {"stop", 3, "bot"}}
+	want := []ControlRequest{{Action: "restart", ID: 0, Name: "my-bot"}, {Action: "start", ID: 4, Name: "bot"}, {Action: "stop", ID: 3, Name: "bot"}}
 	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Errorf("requests = %+v", got)
 	}
@@ -399,13 +408,13 @@ func TestAct(t *testing.T) {
 		return nil, nil
 	}
 	ctx := context.Background()
-	if err := e.act(ctx, ControlRequest{"restart", 0, "my-bot"}); err != nil {
+	if err := e.act(ctx, ControlRequest{Action: "restart", ID: 0, Name: "my-bot"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.act(ctx, ControlRequest{"stop", 1, "fin-and-co"}); err != nil {
+	if err := e.act(ctx, ControlRequest{Action: "stop", ID: 1, Name: "fin-and-co"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.act(ctx, ControlRequest{"start", 0, "my-bot"}); err == nil || err.Error() != "pm2 said: process already online" {
+	if err := e.act(ctx, ControlRequest{Action: "start", ID: 0, Name: "my-bot"}); err == nil || err.Error() != "pm2 said: process already online" {
 		t.Errorf("pm2 refusal: %v", err)
 	}
 	want := `restartProcessId[{"env":{},"id":0}]|stopProcessId[1]|startProcessId[0]`
@@ -413,7 +422,7 @@ func TestAct(t *testing.T) {
 		t.Errorf("calls = %s\nwant    %s", got, want)
 	}
 	// The id must still belong to the same name, and only known actions run.
-	for _, bad := range []ControlRequest{{"restart", 1, "my-bot"}, {"restart", 9, "ghost"}, {"kill", 0, "my-bot"}, {"delete", 0, "my-bot"}} {
+	for _, bad := range []ControlRequest{{Action: "restart", ID: 1, Name: "my-bot"}, {Action: "restart", ID: 9, Name: "ghost"}, {Action: "kill", ID: 0, Name: "my-bot"}, {Action: "delete", ID: 0, Name: "my-bot"}} {
 		if err := e.act(ctx, bad); err == nil {
 			t.Errorf("%+v should be refused", bad)
 		}
@@ -423,7 +432,7 @@ func TestAct(t *testing.T) {
 	}
 	// While one action runs, the next is refused right away, not queued.
 	e.actMu.Lock()
-	err := e.act(ctx, ControlRequest{"restart", 0, "my-bot"})
+	err := e.act(ctx, ControlRequest{Action: "restart", ID: 0, Name: "my-bot"})
 	e.actMu.Unlock()
 	if err == nil || !strings.Contains(err.Error(), "still running") || len(calls) != 3 {
 		t.Errorf("busy: %v, calls %v", err, calls)
@@ -477,10 +486,10 @@ func TestControlSocket(t *testing.T) {
 	if st, err := os.Stat(sock); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("socket mode = %v, %v", st.Mode(), err)
 	}
-	if err := SendControl(ctx, sock, ControlRequest{"restart", 0, "my-bot"}); err != nil || gotMethod != "restartProcessId" {
+	if err := SendControl(ctx, sock, ControlRequest{Action: "restart", ID: 0, Name: "my-bot"}); err != nil || gotMethod != "restartProcessId" {
 		t.Errorf("restart: %v (%s)", err, gotMethod)
 	}
-	if err := SendControl(ctx, sock, ControlRequest{"restart", 1, "my-bot"}); err == nil || !strings.Contains(err.Error(), "isn't in pm2") {
+	if err := SendControl(ctx, sock, ControlRequest{Action: "restart", ID: 1, Name: "my-bot"}); err == nil || !strings.Contains(err.Error(), "isn't in pm2") {
 		t.Errorf("mismatch: %v", err)
 	}
 	select {
@@ -488,8 +497,8 @@ func TestControlSocket(t *testing.T) {
 	default:
 		t.Error("an action should ask for a fresh snapshot")
 	}
-	if err := SendControl(ctx, filepath.Join(t.TempDir(), "none.sock"), ControlRequest{"restart", 0, "my-bot"}); err == nil ||
-		!strings.Contains(err.Error(), "isn't taking actions") {
+	if err := SendControl(ctx, filepath.Join(t.TempDir(), "none.sock"), ControlRequest{Action: "restart", ID: 0, Name: "my-bot"}); err == nil ||
+		!strings.Contains(err.Error(), "isn't taking requests") {
 		t.Errorf("no helper: %v", err)
 	}
 	// A crash leaves the socket file behind; the next start must still work.

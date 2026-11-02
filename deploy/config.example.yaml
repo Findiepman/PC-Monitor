@@ -44,9 +44,9 @@ providers:
     all_servers: false   # true lists every server, needs a root admin key
 
   # Discord bots (anything pm2 runs): a group in Services and their own
-  # "Discord bots" page, with start/restart/stop. dashd can't reach pm2
-  # itself, so deploy/dashd-pm2.service runs as the pm2 user: it writes the
-  # list to `path` and takes the button presses on `control`.
+  # "Discord bots" page, with start/restart/stop and logs. dashd can't reach
+  # pm2 itself, so deploy/dashd-pm2.service runs as the pm2 user: it writes
+  # the list to `path` and takes button presses and log requests on `control`.
   pm2:
     label: Discord bots
     path: /run/pm2-status/pm2.json
