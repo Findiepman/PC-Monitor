@@ -27,16 +27,18 @@ const maxProcs = 500
 // maxSnapshot caps how much of the file is read.
 const maxSnapshot = 1 << 20
 
-var errNoLogs = errors.New("dashd can't read pm2 logs. On the server: pm2 logs <name>")
+var errNoLogs = errors.New("dashd can't show pm2 logs yet. On the server: pm2 logs <name>")
 
-// Provider lists pm2 processes from the exporter's snapshot. It is view-only:
-// no unit has actions and Do always refuses.
+// Provider lists pm2 processes from the helper's snapshot and sends start,
+// stop and restart to the helper's control socket.
 type Provider struct {
 	label   string
 	path    string
 	exclude map[string]bool
 	read    func() ([]byte, error)
 	now     func() time.Time
+	// send delivers an action to the helper (SendControl on the socket).
+	send func(ctx context.Context, req ControlRequest) error
 }
 
 func New(cfg config.PM2) *Provider {
@@ -47,55 +49,87 @@ func New(cfg config.PM2) *Provider {
 // NewWithReader takes the snapshot from read instead of cfg.Path. Used by
 // tests and mock mode.
 func NewWithReader(cfg config.PM2, read func() ([]byte, error)) *Provider {
-	p := &Provider{label: cfg.Label, path: cfg.Path, exclude: map[string]bool{}, read: read, now: time.Now}
+	p := &Provider{label: cfg.Label, path: cfg.Path, exclude: map[string]bool{}, read: read, now: time.Now,
+		send: func(ctx context.Context, req ControlRequest) error { return SendControl(ctx, cfg.Control, req) }}
 	for _, n := range cfg.Exclude {
 		p.exclude[strings.ToLower(strings.TrimSpace(n))] = true
 	}
 	return p
 }
 
+// SetSender replaces how actions reach the helper. Mock mode uses it.
+func (p *Provider) SetSender(send func(ctx context.Context, req ControlRequest) error) {
+	p.send = send
+}
+
 func (p *Provider) Name() string  { return "pm2" }
 func (p *Provider) Label() string { return p.label }
 
 func (p *Provider) List(context.Context) ([]provider.Unit, error) {
-	raw, err := p.read()
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("no pm2 snapshot at %s. Is dashd-pm2.service running? (systemctl status dashd-pm2)", p.path)
-	}
+	procs, now, err := p.snapshot()
 	if err != nil {
 		return nil, err
 	}
+	return Units(procs, p.exclude, now), nil
+}
+
+// snapshot reads the helper's file and checks it is fresh.
+func (p *Provider) snapshot() ([]Proc, time.Time, error) {
+	now := p.now()
+	raw, err := p.read()
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, now, fmt.Errorf("no pm2 snapshot at %s. Is dashd-pm2.service running? (systemctl status dashd-pm2)", p.path)
+	}
+	if err != nil {
+		return nil, now, err
+	}
 	var snap Snapshot
 	if err := json.Unmarshal(raw, &snap); err != nil {
-		return nil, fmt.Errorf("can't read the pm2 snapshot: %w", err)
+		return nil, now, fmt.Errorf("can't read the pm2 snapshot: %w", err)
 	}
-	now := p.now()
 	// Allow three missed writes when the exporter runs slower than default.
 	stale := max(StaleAfter, 3*time.Duration(min(snap.Every, int64(time.Hour/time.Millisecond)))*time.Millisecond)
 	// A stamp far in the future (skewed or forged) would otherwise never age.
 	age := now.Sub(time.UnixMilli(snap.T))
 	if age < -stale {
-		return nil, errors.New("the pm2 snapshot is dated in the future. Check the server clock, then restart dashd-pm2")
+		return nil, now, errors.New("the pm2 snapshot is dated in the future. Check the server clock, then restart dashd-pm2")
 	}
 	if age > stale {
-		return nil, fmt.Errorf("the pm2 snapshot is %s old, so these bots may not be running. Is dashd-pm2.service running? (systemctl status dashd-pm2)", age.Round(time.Second))
+		return nil, now, fmt.Errorf("the pm2 snapshot is %s old, so these bots may not be running. Is dashd-pm2.service running? (systemctl status dashd-pm2)", age.Round(time.Second))
 	}
 	if snap.Error != "" {
-		return nil, errors.New(clean(snap.Error, 300))
+		return nil, now, errors.New(clean(snap.Error, 300))
 	}
 	if len(snap.Procs) > maxProcs {
 		snap.Procs = snap.Procs[:maxProcs]
 	}
-	return Units(snap.Procs, p.exclude, now), nil
+	return snap.Procs, now, nil
 }
 
 // Units turns snapshot processes into dashboard units.
 func Units(procs []Proc, exclude map[string]bool, now time.Time) []provider.Unit {
+	bs := bind(procs, exclude, now)
+	units := make([]provider.Unit, len(bs))
+	for i, b := range bs {
+		units[i] = b.unit
+	}
+	return units
+}
+
+// bound is a unit with the pm2 process it was made from, so Do can find the
+// process behind a unit id exactly the way List named it.
+type bound struct {
+	unit provider.Unit
+	proc Proc
+}
+
+func bind(procs []Proc, exclude map[string]bool, now time.Time) []bound {
 	// The snapshot is written by another user; clean it again here.
 	procs = append([]Proc(nil), procs...)
 	for i := range procs {
 		pr := &procs[i]
 		pr.Name, pr.Status, pr.Runtime = clean(pr.Name, 64), clean(pr.Status, 32), clean(pr.Runtime, 32)
+		pr.Discord = clean(pr.Discord, 64)
 		if len(pr.Accounts) > maxAccounts {
 			pr.Accounts = pr.Accounts[:maxAccounts]
 		}
@@ -111,20 +145,21 @@ func Units(procs []Proc, exclude map[string]bool, now time.Time) []provider.Unit
 	for _, pr := range procs {
 		count[pr.Name]++
 	}
-	units := []provider.Unit{}
+	out := []bound{}
 	used := map[string]bool{}
 	next := map[string]int{}
 	for _, pr := range procs {
 		if pr.Name == "" || exclude[strings.ToLower(pr.Name)] {
 			continue
 		}
+		state := MapStatus(pr.Status)
 		u := provider.Unit{
 			ID:      pr.Name,
 			Name:    pr.Name,
 			Kind:    "bot",
-			State:   MapStatus(pr.Status),
+			State:   state,
 			Health:  provider.HealthNone,
-			Actions: []string{},
+			Actions: Actions(state),
 			Meta:    map[string]string{},
 		}
 		if count[pr.Name] > 1 {
@@ -143,11 +178,23 @@ func Units(procs []Proc, exclude map[string]bool, now time.Time) []provider.Unit
 		if pr.Runtime != "" {
 			u.Meta["description"] = pr.Runtime
 		}
+		if pr.Discord != "" {
+			u.Meta["discord"] = pr.Discord
+		}
 		if pr.Restarts > 0 {
 			u.Meta["restarts"] = strconv.Itoa(pr.Restarts)
 		}
-		if len(pr.Accounts) > 0 {
-			u.Meta["accounts"] = strings.Join(pr.Accounts, "\n")
+		// One line per account, "name" or "name<TAB>discord name". clean()
+		// strips tabs and newlines from both, so the format can't be faked.
+		lines := make([]string, 0, len(pr.Accounts))
+		for _, a := range pr.Accounts {
+			if d := clean(pr.Logins[a], 64); d != "" {
+				a += "\t" + d
+			}
+			lines = append(lines, a)
+		}
+		if len(lines) > 0 {
+			u.Meta["accounts"] = strings.Join(lines, "\n")
 		}
 		if u.State == provider.StateRunning {
 			if pr.Started > 0 {
@@ -157,9 +204,23 @@ func Units(procs []Proc, exclude map[string]bool, now time.Time) []provider.Unit
 			}
 			u.CPU, u.MemBytes = pr.CPU, pr.Mem
 		}
-		units = append(units, u)
+		out = append(out, bound{u, pr})
 	}
-	return units
+	return out
+}
+
+// Actions is what the page offers per state. pm2 has no kill; stop already
+// ends the process.
+func Actions(state string) []string {
+	switch state {
+	case provider.StateRunning:
+		return []string{provider.ActionRestart, provider.ActionStop}
+	case provider.StateStarting, provider.StateRestarting, provider.StateStopping:
+		return []string{provider.ActionStop}
+	case provider.StateStopped, provider.StateFailed:
+		return []string{provider.ActionStart}
+	}
+	return []string{}
 }
 
 // MapStatus maps pm2's process states onto dashd's.
@@ -181,7 +242,23 @@ func MapStatus(s string) string {
 	return provider.StateUnknown
 }
 
-func (p *Provider) Do(context.Context, string, string) error { return provider.ErrBadAction }
+func (p *Provider) Do(ctx context.Context, id, action string) error {
+	switch action {
+	case provider.ActionStart, provider.ActionStop, provider.ActionRestart:
+	default:
+		return provider.ErrBadAction
+	}
+	procs, now, err := p.snapshot()
+	if err != nil {
+		return err
+	}
+	for _, b := range bind(procs, p.exclude, now) {
+		if b.unit.ID == id {
+			return p.send(ctx, ControlRequest{Action: action, ID: b.proc.ID, Name: b.proc.Name})
+		}
+	}
+	return provider.ErrUnknownUnit
+}
 
 func (p *Provider) Logs(context.Context, string, int) (<-chan provider.LogLine, error) {
 	return nil, errNoLogs

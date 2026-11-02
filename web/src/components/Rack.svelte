@@ -11,7 +11,6 @@
     pending,
     armed,
     filter = $bindable('all'),
-    botsElsewhere = false,
     onselect,
     onaction,
   }: {
@@ -21,13 +20,11 @@
     pending: Record<string, Action>;
     armed: { id: string; action: Action } | null;
     filter?: string;
-    /** The pm2 bots are configured but shown on their own page. */
-    botsElsewhere?: boolean;
     onselect: (u: Unit) => void;
     onaction: (u: Unit, a: Action) => void;
   } = $props();
 
-  // Only the units of the providers shown here; others have their own page.
+  // Only the units of the providers the config lists.
   let units = $derived(live.units.filter((u) => providers.some((p) => p.name === u.provider)));
   let groups = $derived(providers.map((p) => ({ ...p, units: units.filter((u) => u.provider === p.name) })));
   let shown = $derived(filter === 'all' ? groups : groups.filter((g) => g.name === filter));
@@ -87,8 +84,6 @@
     </div>
   {:else if metaState === 'failed' && providers.length === 0}
     <div class="empty" role="alert"><b>Couldn't load the service list</b><p>Reload the page to try again.</p></div>
-  {:else if providers.length === 0 && botsElsewhere}
-    <div class="empty"><b>No services here</b><p>Your bots are on the Discord bots tab at the top.</p></div>
   {:else if providers.length === 0}
     <div class="empty"><b>No providers configured</b><p>Add a provider in the dashd config and its services will show up here.</p></div>
   {/if}
@@ -226,6 +221,10 @@
 
   .g-pterodactyl .gtag {
     background: var(--mint);
+  }
+
+  .g-pm2 .gtag {
+    background: var(--lemon);
   }
 
   .ghead small {

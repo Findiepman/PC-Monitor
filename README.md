@@ -1,6 +1,6 @@
 # dashd
 
-A self-hosted dashboard for one Linux server: live CPU, memory, disk and network, Docker containers and their health, Pterodactyl game servers, systemd services like Wings and playit, a page listing the Discord bots pm2 runs, logs you can filter and copy, and start/stop/restart for all of it. It's meant to live at `dash.findiepman.dev` behind a Cloudflare Tunnel.
+A self-hosted dashboard for one Linux server: live CPU, memory, disk and network, Docker containers and their health, Pterodactyl game servers, systemd services like Wings and playit, the Discord bots pm2 runs, logs you can filter and copy, and start/stop/restart for all of it. It's meant to live at `dash.findiepman.dev` behind a Cloudflare Tunnel.
 
 ```
 browser ──https──> Cloudflare ──tunnel──> cloudflared ──> 127.0.0.1:7070 dashd
@@ -76,7 +76,7 @@ Everything in the UI is a *unit* from a *provider*. To add one (a remote Wings n
 2. Add a config block to `config.Providers` in `agent/internal/config/config.go`.
 3. Register it in `serve()` in `agent/cmd/dashd/main.go`.
 
-The frontend picks up the new group, its LEDs, actions and logs without changes. Discord bots running in Docker, as systemd units or on Pterodactyl already work: add them to the matching config. Bots run by pm2 get their own **Discord bots** page (the `pm2` provider, view-only): `dashd pm2-export` runs as the pm2 user (`deploy/dashd-pm2.service`) and writes a filtered list that dashd reads, because dashd's sandbox can't reach pm2 directly. See DEPLOY.md step 8b.
+The frontend picks up the new group, its LEDs, actions and logs without changes. Discord bots running in Docker, as systemd units or on Pterodactyl already work: add them to the matching config. Bots run by pm2 show as a **Discord bots** group and get their own page with their Discord names and start/restart/stop (the `pm2` provider): `dashd pm2-export` runs as the pm2 user (`deploy/dashd-pm2.service`), writes a filtered list that dashd reads and takes the button presses on a control socket only dashd can use, because dashd's sandbox can't reach pm2 directly. See DEPLOY.md step 8b.
 
 ## Service descriptions
 

@@ -86,12 +86,14 @@ type Pterodactyl struct {
 	AllServers bool `yaml:"all_servers"`
 }
 
-// PM2 shows the processes pm2 runs (the Discord bots), read-only. dashd reads
-// the snapshot that `dashd pm2-export` writes (deploy/dashd-pm2.service).
+// PM2 shows the processes pm2 runs (the Discord bots) and can start, stop and
+// restart them, through the `dashd pm2-export` helper (deploy/dashd-pm2.service).
 type PM2 struct {
 	Label string `yaml:"label"`
 	// Path is the snapshot file the exporter writes.
 	Path string `yaml:"path"`
+	// Control is the helper's socket for start, stop and restart.
+	Control string `yaml:"control"`
 	// Exclude hides processes by name, for pm2 apps that aren't bots.
 	Exclude []string `yaml:"exclude"`
 }
@@ -182,6 +184,9 @@ func (c *Config) normalize() error {
 		}
 		if p.Path == "" {
 			p.Path = "/run/pm2-status/pm2.json"
+		}
+		if p.Control == "" {
+			p.Control = "/run/pm2-status/control.sock"
 		}
 	}
 	if p := c.Providers.Pterodactyl; p != nil {

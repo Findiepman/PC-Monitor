@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -23,16 +24,27 @@ type ExportOptions struct {
 	// Accounts maps a pm2 process name to a bots.json style file whose
 	// top-level keys are the bot accounts that process logs in.
 	Accounts map[string]string
-	Log      *slog.Logger
+	// Control is the socket dashd sends start/stop/restart requests to; ""
+	// turns actions off. ControlUser is the user allowed to use it (dashd).
+	Control     string
+	ControlUser string
+	Log         *slog.Logger
 }
 
 // Exporter takes snapshots. Its fields are swappable for tests.
 type Exporter struct {
 	opts ExportOptions
-	// list asks the pm2 daemon for its processes (see rpc.go).
+	// list asks the pm2 daemon for its processes; rpc runs any other call
+	// (see rpc.go).
 	list     func(ctx context.Context) ([]byte, error)
+	rpc      func(ctx context.Context, method string, args ...any) ([]json.RawMessage, error)
 	readFile func(string) ([]byte, error)
-	now      func() time.Time
+	// kick asks Run for a snapshot now (after an action).
+	kick  chan struct{}
+	actMu sync.Mutex
+	// names caches the Discord names found in each log, by path.
+	names map[string]nameCache
+	now   func() time.Time
 	// lastWarn keeps a repeating problem from filling the journal.
 	lastWarn map[string]string
 }
@@ -51,16 +63,29 @@ func NewExporter(o ExportOptions) *Exporter {
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
-	e := &Exporter{opts: o, readFile: os.ReadFile, now: time.Now, lastWarn: map[string]string{}}
-	e.list = func(ctx context.Context) ([]byte, error) {
-		return monitorData(ctx, filepath.Join(e.opts.Home, "rpc.sock"))
+	e := &Exporter{opts: o, readFile: os.ReadFile, now: time.Now, lastWarn: map[string]string{},
+		kick: make(chan struct{}, 1), names: map[string]nameCache{}}
+	sock := filepath.Join(o.Home, "rpc.sock")
+	e.list = func(ctx context.Context) ([]byte, error) { return monitorData(ctx, sock) }
+	e.rpc = func(ctx context.Context, method string, args ...any) ([]json.RawMessage, error) {
+		return call(ctx, sock, method, args...)
 	}
 	return e
 }
 
 // Run writes a snapshot now and then every o.Every until ctx ends.
 func (e *Exporter) Run(ctx context.Context) error {
-	e.opts.Log.Info("pm2-export running", "out", e.opts.Out, "every", e.opts.Every, "pm2_home", e.opts.Home)
+	e.opts.Log.Info("pm2-export running", "out", e.opts.Out, "every", e.opts.Every, "pm2_home", e.opts.Home, "control", e.opts.Control)
+	if e.opts.Control != "" {
+		ln, err := listenControl(e.opts.Control, e.opts.ControlUser)
+		if err != nil {
+			// The bot list still works; only the buttons don't.
+			e.opts.Log.Warn("control socket is off, so the dashboard can't start/stop bots", "err", err)
+		} else {
+			defer ln.Close()
+			go e.serveControl(ctx, ln)
+		}
+	}
 	t := time.NewTicker(e.opts.Every)
 	defer t.Stop()
 	for {
@@ -73,6 +98,7 @@ func (e *Exporter) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
+		case <-e.kick:
 		}
 	}
 }
@@ -108,6 +134,28 @@ func (e *Exporter) Take(ctx context.Context) (snap Snapshot) {
 		e.warn("accounts:"+file, "can't read bot account names", err)
 		procs[i].Accounts = names
 	}
+	live := map[string]bool{}
+	for i := range procs {
+		pr := &procs[i]
+		live[pr.outLog] = true
+		var logins map[string]string
+		pr.Discord, logins = e.discordNames(pr.outLog)
+		// Only accounts from the bots.json list count. A bot that echoes chat
+		// to its log could otherwise add any "X is signed in as 'Y'" line.
+		for _, a := range pr.Accounts {
+			if d, ok := logins[a]; ok {
+				if pr.Logins == nil {
+					pr.Logins = map[string]string{}
+				}
+				pr.Logins[a] = d
+			}
+		}
+	}
+	for path := range e.names {
+		if !live[path] {
+			delete(e.names, path)
+		}
+	}
 	snap.Procs = procs
 	return snap
 }
@@ -118,6 +166,50 @@ func (e *Exporter) accounts(file string) ([]string, error) {
 		return nil, err
 	}
 	return AccountNames(raw)
+}
+
+type nameCache struct {
+	size   int64
+	mod    time.Time
+	self   string
+	logins map[string]string
+}
+
+// discordNames reads the bot's own log for its Discord name, re-reading only
+// when the log changed.
+func (e *Exporter) discordNames(path string) (string, map[string]string) {
+	if path == "" || path == "/dev/null" {
+		return "", nil
+	}
+	st, err := os.Stat(path)
+	// Opening a FIFO with no writer would block this loop forever.
+	if err != nil || !st.Mode().IsRegular() {
+		return "", nil
+	}
+	if c, ok := e.names[path]; ok && c.size == st.Size() && c.mod.Equal(st.ModTime()) {
+		return c.self, c.logins
+	}
+	tail, st, err := readTail(path, logTail)
+	if err != nil || st == nil {
+		return "", nil
+	}
+	self, logins := DiscordNames(tail)
+	// Keep names found before a log rotation or a quiet stretch.
+	if old, ok := e.names[path]; ok {
+		if self == "" {
+			self = old.self
+		}
+		for k, v := range old.logins {
+			if _, have := logins[k]; !have && len(logins) < maxAccounts {
+				if logins == nil {
+					logins = map[string]string{}
+				}
+				logins[k] = v
+			}
+		}
+	}
+	e.names[path] = nameCache{st.Size(), st.ModTime(), self, logins}
+	return self, logins
 }
 
 // warn logs err once per key until it changes or clears.

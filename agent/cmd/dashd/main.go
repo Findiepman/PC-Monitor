@@ -42,8 +42,8 @@ Usage:
   dashd init [-o path] [-mock]     create a config with a new login and TOTP secret
   dashd hash-password              hash a password for auth.password_hash
   dashd totp-code -secret S        print the current code for a secret (for testing)
-  dashd pm2-export [-out path]     run as the pm2 user: write the bot list dashd shows
-                                   (see deploy/dashd-pm2.service)
+  dashd pm2-export [-out path]     run as the pm2 user: the bot list dashd shows and its
+                                   start/stop/restart (see deploy/dashd-pm2.service)
 `
 
 func main() {
@@ -218,6 +218,8 @@ func pm2Export(args []string) error {
 	out := fs.String("out", "/run/pm2-status/pm2.json", "snapshot file dashd reads")
 	every := fs.Duration("every", 10*time.Second, "how often to ask pm2")
 	home := fs.String("pm2-home", "", "PM2_HOME (default $PM2_HOME or ~/.pm2)")
+	control := fs.String("control", "/run/pm2-status/control.sock", "socket dashd sends start/stop/restart to (\"\" turns actions off)")
+	allow := fs.String("control-user", "dashd", "the one other user allowed to use the control socket")
 	accounts := accountFlags{}
 	fs.Var(accounts, "accounts", "<pm2 name>=<bots.json>: list that file's top-level keys as the process's bot accounts (repeatable)")
 	fs.Parse(args)
@@ -225,11 +227,13 @@ func pm2Export(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return pm2.NewExporter(pm2.ExportOptions{
-		Out:      *out,
-		Every:    *every,
-		Home:     *home,
-		Accounts: accounts,
-		Log:      slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		Out:         *out,
+		Every:       *every,
+		Home:        *home,
+		Accounts:    accounts,
+		Control:     *control,
+		ControlUser: *allow,
+		Log:         slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}).Run(ctx)
 }
 
@@ -312,7 +316,7 @@ providers:
   #   url: https://panel.findiepman.dev
   #   api_key: env:DASHD_PTERODACTYL_KEY
 
-  # Discord bots run by pm2, read-only. Needs deploy/dashd-pm2.service
+  # Discord bots run by pm2. Needs deploy/dashd-pm2.service
   # running first (see DEPLOY.md), then remove the # in front of this line.
   # pm2: {}
 `)

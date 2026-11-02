@@ -79,23 +79,59 @@ func Set(ctx context.Context) []provider.Provider {
 }
 
 // mockPM2 runs the real pm2 provider on a made-up snapshot, so mock mode
-// exercises the same code as the server.
+// exercises the same code as the server. Its buttons change the fake state.
 func mockPM2() provider.Provider {
 	const mb = 1 << 20
 	boot := time.Now().Add(-26 * time.Hour)
-	return pm2.NewWithReader(config.PM2{Label: "Discord bots", Path: "(mock)"}, func() ([]byte, error) {
-		now := time.Now()
-		cpu := func(base float64) *float64 { return provider.Ptr(base * (0.7 + rand.Float64()*0.6)) }
-		snap := pm2.Snapshot{T: now.UnixMilli(), Procs: []pm2.Proc{
-			{Name: "my-bot", ID: 0, Status: "online", Started: boot.Add(3 * time.Hour).UnixMilli(),
-				CPU: cpu(0.3), Mem: provider.Ptr(uint64(91 * mb)), Restarts: 2, Runtime: "node"},
-			{Name: "fin-and-co", ID: 1, Status: "online", Started: boot.UnixMilli(),
-				CPU: cpu(0.2), Mem: provider.Ptr(uint64(54 * mb)), Runtime: "python",
-				Accounts: []string{"Manager", "Daryl", "Michonne", "Glenn", "Shane", "Carol", "Carl", "Negan"}},
-			{Name: "old-music-bot", ID: 2, Status: "stopped", Restarts: 14, Runtime: "node"},
-		}}
-		return json.Marshal(snap)
+	var mu sync.Mutex
+	procs := []pm2.Proc{
+		{Name: "my-bot", ID: 0, Status: "online", Started: boot.Add(3 * time.Hour).UnixMilli(),
+			Mem: provider.Ptr(uint64(91 * mb)), Restarts: 2, Runtime: "node", Discord: "AftermathCoordinator#3579"},
+		{Name: "fin-and-co", ID: 1, Status: "online", Started: boot.UnixMilli(),
+			Mem: provider.Ptr(uint64(54 * mb)), Runtime: "python",
+			Accounts: []string{"Manager", "Daryl", "Michonne", "Glenn", "Shane", "Carol", "Carl", "Negan"},
+			Logins: map[string]string{"Manager": "Sigmabot1", "Daryl": "Daryl", "Michonne": "michonne", "Glenn": "Glenn",
+				"Shane": "Shane", "Carol": "Carol", "Carl": "Carl", "Negan": "Negan"}},
+		{Name: "old-music-bot", ID: 2, Status: "stopped", Restarts: 14, Runtime: "node"},
+	}
+	cpuBase := []float64{0.3, 0.2, 0}
+	p := pm2.NewWithReader(config.PM2{Label: "Discord bots", Path: "(mock)"}, func() ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		out := append([]pm2.Proc(nil), procs...)
+		for i := range out {
+			if out[i].Status == "online" {
+				out[i].CPU = provider.Ptr(cpuBase[i] * (0.7 + rand.Float64()*0.6))
+			}
+		}
+		return json.Marshal(pm2.Snapshot{T: time.Now().UnixMilli(), Procs: out})
 	})
+	p.SetSender(func(_ context.Context, r pm2.ControlRequest) error {
+		time.Sleep(400 * time.Millisecond) // feel like a real round trip
+		mu.Lock()
+		defer mu.Unlock()
+		for i := range procs {
+			pr := &procs[i]
+			if pr.ID != r.ID || pr.Name != r.Name {
+				continue
+			}
+			switch r.Action {
+			case "start":
+				if pr.Status == "online" {
+					return errors.New("pm2 said: process already online")
+				}
+				pr.Status, pr.Started = "online", time.Now().UnixMilli()
+			case "restart":
+				pr.Status, pr.Started = "online", time.Now().UnixMilli()
+				pr.Restarts++
+			case "stop":
+				pr.Status = "stopped"
+			}
+			return nil
+		}
+		return errors.New("that bot isn't in pm2 anymore")
+	})
+	return p
 }
 
 func newProvider(name, label string, units []*unit) *Provider {

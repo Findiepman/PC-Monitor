@@ -17,7 +17,7 @@
   let { onsignout }: { onsignout: () => void } = $props();
 
   const SELECTED_KEY = 'dashd:selected';
-  // The pm2 provider gets its own page instead of a group in the rack.
+  // The pm2 bots show in the rack and also get their own page.
   const BOTS = 'pm2';
 
   type View = 'home' | 'bots';
@@ -36,9 +36,8 @@
   let view = $state<View>(readView());
 
   let botsProvider = $derived(meta.providers.find((p) => p.name === BOTS));
-  let rackProviders = $derived(meta.providers.filter((p) => p.name !== BOTS));
   // Units in the order they appear on screen, grouped by provider.
-  let ordered = $derived(rackProviders.flatMap((p) => live.units.filter((u) => u.provider === p.name)));
+  let ordered = $derived(meta.providers.flatMap((p) => live.units.filter((u) => u.provider === p.name)));
   let selected = $derived(ordered.find((u) => u.id === selectedId));
   // j and k only walk the units the provider filter leaves on screen.
   let onscreen = $derived(pfilter === 'all' ? ordered : ordered.filter((u) => u.provider === pfilter));
@@ -60,9 +59,10 @@
     }
   });
 
-  // Fall back to the first unit when nothing (or a vanished unit) is selected.
+  // Fall back to the first unit when nothing (or a vanished unit) is selected;
+  // prefer one with logs, so the log tile doesn't open on a bot.
   $effect(() => {
-    if (ordered.length && !selected && !narrow) selectedId = ordered[0].id;
+    if (ordered.length && !selected && !narrow) selectedId = (ordered.find((u) => u.provider !== BOTS) ?? ordered[0]).id;
   });
 
   $effect(() => {
@@ -204,7 +204,7 @@
         arm('stop');
         break;
       case 'l':
-        if (selected && onscreen.some((x) => x.id === selected.id)) showLogs(selected);
+        if (selected && selected.provider !== BOTS && onscreen.some((x) => x.id === selected.id)) showLogs(selected);
         break;
       case '/':
         e.preventDefault();
@@ -232,14 +232,13 @@
   />
 
   {#if view === 'bots'}
-    <Bots provider={botsProvider} {metaState} />
+    <Bots provider={botsProvider} {metaState} {pending} onaction={run} />
   {:else}
     <main class="bento">
       <HostTrace />
 
       <Rack
-        providers={rackProviders}
-        botsElsewhere={!!botsProvider}
+        providers={meta.providers}
         {metaState}
         {selectedId}
         {pending}
@@ -252,7 +251,7 @@
       <Activity />
 
       {#if !narrow}
-        <LogPane unit={selected} bind:filterInput />
+        <LogPane unit={selected} nologs={BOTS} bind:filterInput />
       {:else}
         <section class="tile tile-lilac t-logs" aria-labelledby="h-logs">
           <header class="th"><h2 id="h-logs">Logs</h2></header>
@@ -264,7 +263,7 @@
           {/if}
         </section>
         {#if sheetOpen && selected}
-          <LogPane unit={selected} sheet onclose={() => (sheetOpen = false)} bind:filterInput />
+          <LogPane unit={selected} nologs={BOTS} sheet onclose={() => (sheetOpen = false)} bind:filterInput />
         {/if}
       {/if}
     </main>
@@ -273,7 +272,7 @@
 
 <Palette
   bind:open={paletteOpen}
-  skip={BOTS}
+  nologs={BOTS}
   {view}
   botsLabel={botsProvider?.label}
   onview={go}

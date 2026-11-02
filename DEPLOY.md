@@ -235,25 +235,31 @@ If it isn't running, `journalctl -u dashd -n 30 --no-pager` shows why. The error
 
 ---
 
-## Step 8b. Show your Discord bots (pm2) 🐧 Server
+## Step 8b. Show and control your Discord bots (pm2) 🐧 Server
 
-Skip this if you don't run bots with pm2. The **Discord bots** page lists everything pm2 runs (view-only). dashd can't look inside your home folder, so a small helper runs as your user and writes the list to `/run/pm2-status/pm2.json`.
+Skip this if you don't run bots with pm2. Everything pm2 runs shows up as a **Discord bots** group under Services and on its own **Discord bots** page, with the Discord name each bot logged in as, and hold-to-confirm Start, Restart and Stop buttons. dashd can't look inside your home folder, so a small helper runs as your user: it writes the list to `/run/pm2-status/pm2.json` and takes the button presses on `/run/pm2-status/control.sock`.
 
 ```bash
 nano ~/dashd/deploy/dashd-pm2.service
 ```
 
-If pm2 runs under a user other than `fin`, change `fin` everywhere in that file. The `-accounts fin-and-co=...` part shows the bot names from Fin & Co's `bots.json` (only the names, never the tokens); remove it if you don't have that. Then:
+If pm2 runs under a user other than `fin`, change `fin` in all five places. The `-accounts fin-and-co=...` part shows the bot names from Fin & Co's `bots.json` (only the names, never the tokens); remove it if you don't have that. Then:
 
 ```bash
 sudo cp ~/dashd/deploy/dashd-pm2.service /etc/systemd/system/dashd-pm2.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now dashd-pm2
+sudo systemctl enable dashd-pm2
+sudo systemctl restart dashd-pm2
 ```
 
-✅ **Check:** `cat /run/pm2-status/pm2.json` prints your bots with `"status":"online"`.
+✅ **Check:**
 
-Now turn the page on. Open `sudo nano /etc/dashd/config.yaml` and add this under `providers:` (2 spaces before `pm2:`):
+```bash
+cat /run/pm2-status/pm2.json          # your bots with "status":"online"
+getfacl -p /run/pm2-status/control.sock | grep dashd   # user:dashd:rw-
+```
+
+Now turn the page on. Open `sudo nano /etc/dashd/config.yaml` and add this under `providers:` (2 spaces before `pm2:`), if it isn't there yet:
 
 ```yaml
   pm2: {}
@@ -263,7 +269,7 @@ Now turn the page on. Open `sudo nano /etc/dashd/config.yaml` and add this under
 sudo systemctl restart dashd
 ```
 
-✅ **Check:** the dashboard's top bar now has a **Discord bots** tab.
+✅ **Check:** reload the dashboard (Ctrl+Shift+R). The top bar has a **Discord bots** tab, and holding **Restart** on a bot restarts it (it shows up under Activity).
 
 ---
 
@@ -372,6 +378,8 @@ You stay signed in during updates.
 | Docker section says "socket not reachable" | Docker isn't running: `sudo systemctl start docker`. |
 | Discord bots page says "no pm2 snapshot" or "snapshot is … old" | The helper isn't running: `systemctl status dashd-pm2 --no-pager`, then `journalctl -u dashd-pm2 -n 20 --no-pager`. |
 | Discord bots page says "pm2 isn't running" | Start pm2: `sudo systemctl start pm2-fin`. |
+| Bot buttons say "the dashd-pm2 helper isn't taking actions" or "isn't allowed to use the helper's control socket" | Run `cd ~/dashd && sudo ./deploy/update.sh`, then check `getfacl -p /run/pm2-status/control.sock` shows `user:dashd:rw-`. If not, `journalctl -u dashd-pm2 -n 20 --no-pager` says why. |
+| Bot buttons say "the helper is restarting" | Wait a few seconds and try again. |
 | Restarting a service says "Interactive authentication required" | The name in `/etc/polkit-1/rules.d/50-dashd.rules` doesn't match step 6b. Fix it, then run `sudo systemctl restart polkit`. |
 | Pterodactyl section says the key was rejected | You made an **application** key (`ptla_`). Make a **client** key (`ptlc_`) under your account's API Credentials. |
 | Cloudflare error page (502) | dashd isn't running (step 8 check), or the tunnel URL isn't exactly `127.0.0.1:7070`. |

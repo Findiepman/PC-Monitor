@@ -28,6 +28,8 @@
   let detail = $derived.by(() => {
     const m = unit.meta ?? {};
     const bits = [m.image ?? m.description ?? m.node ?? unit.kind];
+    // A bot's Discord name says more than its pm2 name.
+    if (m.discord) bits.unshift(m.discord);
     if (m.note) bits.push(m.note);
     if (m.exit && m.exit !== '0') bits.push(`exit ${m.exit}`);
     if (m.restarts) bits.push(`${m.restarts} restarts`);
@@ -55,7 +57,7 @@
   aria-current={selected ? 'true' : undefined}
 >
   <div class="uh">
-    <button class="pick" onclick={onselect} aria-label="Show logs for {unit.name}, {stateLabel(unit)}">
+    <button class="pick" onclick={onselect} aria-label="{unit.kind === 'bot' ? 'Select' : 'Show logs for'} {unit.name}, {stateLabel(unit)}">
       <span class="name">{unit.name}</span>
     </button>
     <span class="state pill {busy ? 'warn' : t === 'fail' ? 'fail' : t === 'ok' ? 'ok' : t === 'warn' ? 'warn' : 'idle'}">

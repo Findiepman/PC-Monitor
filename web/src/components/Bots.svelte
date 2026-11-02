@@ -1,18 +1,42 @@
 <script lang="ts">
-  import type { Provider } from '../lib/types';
+  import type { Action, Provider, Unit } from '../lib/types';
   import { live } from '../lib/live.svelte';
   import { bytes, duration, pct } from '../lib/format';
-  import { stateLabel, tone } from '../lib/status';
+  import { isTransitional, stateLabel, tone } from '../lib/status';
   import Led from './Led.svelte';
+  import HoldButton from './HoldButton.svelte';
+  import Icon from './Icon.svelte';
 
-  let { provider, metaState }: { provider: Provider | undefined; metaState: 'loading' | 'ok' | 'failed' } = $props();
+  let {
+    provider,
+    metaState,
+    pending,
+    onaction,
+  }: {
+    provider: Provider | undefined;
+    metaState: 'loading' | 'ok' | 'failed';
+    pending: Record<string, Action>;
+    onaction: (u: Unit, a: Action) => void;
+  } = $props();
 
   let bots = $derived(provider ? live.units.filter((u) => u.provider === provider.name) : []);
   let error = $derived(provider ? live.errors[provider.name] : undefined);
   let running = $derived(bots.filter((b) => b.state === 'running').length);
   let loading = $derived(metaState === 'loading' || (live.status !== 'live' && bots.length === 0 && !error));
 
-  const accounts = (m: Record<string, string> | undefined) => (m?.accounts ? m.accounts.split('\n') : []);
+  // One line per account: "name" or "name<TAB>Discord name".
+  const accounts = (m: Record<string, string> | undefined) =>
+    (m?.accounts ? m.accounts.split('\n') : []).map((line) => {
+      const [name, discord] = line.split('\t');
+      return { name, discord: discord && discord !== name ? discord : '' };
+    });
+
+  const progressive: Record<Action, string> = {
+    start: 'starting…',
+    stop: 'stopping…',
+    restart: 'restarting…',
+    kill: 'killing…',
+  };
 </script>
 
 <main class="bento bots">
@@ -24,8 +48,8 @@
       {/if}
     </header>
     <p class="sub">
-      What pm2 runs on this server, refreshed every few seconds. View-only: start, stop and logs stay on the
-      server (<span class="mono">pm2 restart &lt;name&gt;</span>, <span class="mono">pm2 logs &lt;name&gt;</span>).
+      What pm2 runs on this server, refreshed every few seconds. Hold a button until it fills to start, restart or
+      stop a bot. Logs stay on the server: <span class="mono">pm2 logs &lt;name&gt;</span>.
     </p>
   </section>
 
@@ -60,12 +84,19 @@
       {#each bots as b (b.id)}
         {@const t = tone(b)}
         {@const accts = accounts(b.meta)}
+        {@const busy = !!pending[b.id] || isTransitional(b)}
         <li class="tile bot" class:off={b.state !== 'running'} class:bad={t === 'fail'}>
           <div class="bh">
             <Led tone={t} />
             <h3 class="bname" title={b.name}>{b.name}</h3>
-            <span class="pill {t}">{stateLabel(b)}</span>
+            <span class="pill {busy ? 'warn' : t}">{pending[b.id] ? progressive[pending[b.id]] : stateLabel(b)}</span>
           </div>
+
+          {#if b.meta?.discord}
+            <p class="discord" title="Discord name, from the bot's own log">
+              <span class="dlabel">On Discord as</span> <b>{b.meta.discord}</b>
+            </p>
+          {/if}
 
           {#if b.about}<p class="about">{b.about}</p>{/if}
 
@@ -84,8 +115,32 @@
             <div class="accts">
               <p class="alabel">Signs in {accts.length} {accts.length === 1 ? 'account' : 'accounts'}</p>
               <ul class="chips" aria-label="Bot accounts in {b.name}">
-                {#each accts as a, i (i)}<li class="chip">{a}</li>{/each}
+                {#each accts as a, i (i)}
+                  <li class="chip" title={a.discord ? `${a.name} is ${a.discord} on Discord` : a.name}>
+                    {a.name}{#if a.discord}<span class="sr-only"> is </span><span class="as">{a.discord}</span><span class="sr-only"> on Discord</span>{/if}
+                  </li>
+                {/each}
               </ul>
+            </div>
+          {/if}
+
+          {#if b.actions.length}
+            <div class="bacts">
+              {#if b.actions.includes('start')}
+                <HoldButton label="Start {b.name}" tone="mint" disabled={busy} onconfirm={() => onaction(b, 'start')}>
+                  <Icon name="start" size={16} /><span>Start</span>
+                </HoldButton>
+              {/if}
+              {#if b.actions.includes('restart')}
+                <HoldButton label="Restart {b.name}" tone="lemon" disabled={busy} onconfirm={() => onaction(b, 'restart')}>
+                  <Icon name="restart" size={16} /><span>Restart</span>
+                </HoldButton>
+              {/if}
+              {#if b.actions.includes('stop')}
+                <HoldButton label="Stop {b.name}" tone="tomato" danger disabled={busy} onconfirm={() => onaction(b, 'stop')}>
+                  <Icon name="stop" size={16} /><span>Stop</span>
+                </HoldButton>
+              {/if}
             </div>
           {/if}
         </li>
@@ -175,6 +230,32 @@
     flex: none;
   }
 
+  .discord {
+    margin-top: -4px;
+    font-size: var(--fs-s);
+    overflow-wrap: anywhere;
+  }
+
+  .dlabel {
+    color: var(--sub);
+    font-weight: 600;
+  }
+
+  .chip .as {
+    margin-left: 6px;
+    padding-left: 6px;
+    border-left: 2px solid var(--line);
+    font-weight: 600;
+    color: var(--sub);
+  }
+
+  .bacts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: auto;
+  }
+
   .about {
     font-size: 13px;
     font-weight: 500;
@@ -227,9 +308,15 @@
     font-size: 13px;
     font-weight: 700;
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  /* Account chips wrap instead of clipping long Discord names. */
+  .chips .chip {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 14px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
   }
 
   .runtime .chip {

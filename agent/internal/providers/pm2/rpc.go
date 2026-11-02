@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// The exporter asks the running pm2 daemon over its rpc.sock instead of
+// The helper talks to the running pm2 daemon over its rpc.sock instead of
 // running `pm2 jlist`. The CLI starts a fresh daemon whenever it can't reach
 // one, so a jlist that lands while pm2 restarts could leave the bots running
 // under this exporter's service. Connecting to a socket can never start
@@ -24,8 +24,8 @@ import (
 //   frame = 1 byte (version 1 << 4 | arg count), then per arg a 4-byte
 //           big-endian length and the bytes; "j:" prefixes JSON, "s:" a string.
 //   call  = [j:{"type":"call","method":M,"args":[...]}, s:<request id>]
-//   reply = [j:{"args":[result...]}, s:<request id>], or an object without
-//           "args" (an error) when the call failed.
+//   reply = [j:{"args":[result...]}, s:<request id>], or
+//           [j:{"error":"message","stack":...}, s:<request id>] when it failed.
 // Checked against pm2 6.0.14 on the server.
 
 const (
@@ -73,9 +73,9 @@ func readFrame(r io.Reader) ([][]byte, error) {
 	return args, nil
 }
 
-// monitorData calls getMonitorData on the daemon behind sock and returns the
-// raw JSON array of processes (the same shape `pm2 jlist` prints).
-func monitorData(ctx context.Context, sock string) ([]byte, error) {
+// call runs one pm2 RPC method on the daemon behind sock and returns the
+// results (the callback's arguments after err).
+func call(ctx context.Context, sock, method string, args ...any) ([]json.RawMessage, error) {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", sock)
 	if err != nil {
@@ -89,40 +89,71 @@ func monitorData(ctx context.Context, sock string) ([]byte, error) {
 	conn.SetDeadline(deadline)
 
 	id := "dashd:" + strconv.FormatUint(callSeq.Add(1), 10)
-	call, _ := json.Marshal(map[string]any{"type": "call", "method": "getMonitorData", "args": []any{map[string]any{}}})
-	if _, err := conn.Write(encodeFrame(append([]byte("j:"), call...), []byte("s:"+id))); err != nil {
+	if args == nil {
+		args = []any{}
+	}
+	req, err := json.Marshal(map[string]any{"type": "call", "method": method, "args": args})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.Write(encodeFrame(append([]byte("j:"), req...), []byte("s:"+id))); err != nil {
 		return nil, err
 	}
 	br := bufio.NewReader(conn)
 	for {
-		args, err := readFrame(br)
+		frame, err := readFrame(br)
 		if err != nil {
 			return nil, err
 		}
 		// The daemon could interleave other replies; only ours counts.
-		if len(args) < 2 || string(args[len(args)-1]) != "s:"+id {
+		if len(frame) < 2 || string(frame[len(frame)-1]) != "s:"+id {
 			continue
 		}
-		return parseReply(args[0])
+		return parseReply(frame[0])
 	}
 }
 
-func parseReply(arg []byte) ([]byte, error) {
-	if len(arg) < 2 || string(arg[:2]) != "j:" {
-		return nil, errors.New("pm2 sent an unexpected reply")
+// monitorData returns pm2's process list as a raw JSON array (the same shape
+// `pm2 jlist` prints).
+func monitorData(ctx context.Context, sock string) ([]byte, error) {
+	res, err := call(ctx, sock, "getMonitorData", map[string]any{})
+	if err != nil {
+		return nil, err
 	}
-	var reply struct {
-		Args []json.RawMessage `json:"args"`
-	}
-	if err := json.Unmarshal(arg[2:], &reply); err != nil || reply.Args == nil {
-		return nil, errors.New("pm2 refused the request")
-	}
-	// The process list is the first array among the results (an error slot,
-	// when present, is null).
-	for _, a := range reply.Args {
+	for _, a := range res {
 		if len(a) > 0 && a[0] == '[' {
 			return a, nil
 		}
 	}
 	return nil, errors.New("pm2 sent no process list")
+}
+
+// pm2Error is a refusal from the daemon, e.g. "process already online".
+type pm2Error string
+
+func (e pm2Error) Error() string { return string(e) }
+
+func parseReply(arg []byte) ([]json.RawMessage, error) {
+	if len(arg) < 2 || string(arg[:2]) != "j:" {
+		return nil, errors.New("pm2 sent an unexpected reply")
+	}
+	var reply struct {
+		Args  []json.RawMessage `json:"args"`
+		Error json.RawMessage   `json:"error"`
+	}
+	if err := json.Unmarshal(arg[2:], &reply); err != nil {
+		return nil, errors.New("pm2 sent an unreadable reply")
+	}
+	// pm2-axon-rpc replies {error: message, stack} or {args: [...]}.
+	if len(reply.Error) > 0 && string(reply.Error) != "null" {
+		var msg string
+		if json.Unmarshal(reply.Error, &msg) != nil {
+			msg = "pm2 refused the request"
+		}
+		return nil, pm2Error(clean(msg, 200))
+	}
+	if reply.Args == nil {
+		return nil, errors.New("pm2 refused the request")
+	}
+	return reply.Args, nil
 }

@@ -1,14 +1,14 @@
 // Package pm2 shows the processes pm2 runs (the Discord bots) on the
-// dashboard, read-only.
+// dashboard and lets you start, stop and restart them.
 //
 // dashd can't ask pm2 itself: pm2 belongs to another user, and dashd's
 // service sandbox (ProtectHome, NoNewPrivileges) rules out both reading that
-// user's ~/.pm2 and sudo. So `dashd pm2-export` runs as the pm2 user, asks the
-// pm2 daemon for its process list (rpc.go), writes a
-// filtered snapshot to a file every few seconds, and the provider reads that
-// file. The filtering matters: pm2's process list includes every process's
-// full environment, which can hold bot tokens. Only the fields below ever leave
-// the exporter.
+// user's ~/.pm2 and sudo. So `dashd pm2-export` runs as the pm2 user. It asks
+// the pm2 daemon for its process list (rpc.go), writes a filtered snapshot to
+// a file every few seconds that the provider reads, and takes start, stop and
+// restart requests from dashd on a control socket (control.go). The filtering
+// matters: pm2's process list includes every process's full environment,
+// which can hold bot tokens. Only the fields below ever leave the helper.
 package pm2
 
 import (
@@ -48,6 +48,14 @@ type Proc struct {
 	// Accounts are the bot account names this process logs in, when the
 	// exporter was told where to find them.
 	Accounts []string `json:"accounts,omitempty"`
+	// Discord is the name the bot logged in to Discord as, read from its own
+	// log ("Logged in as AftermathCoordinator#3579").
+	Discord string `json:"discord,omitempty"`
+	// Logins maps an account to its Discord name, for processes that sign in
+	// several bots ("Manager is signed in as 'Sigmabot1'").
+	Logins map[string]string `json:"logins,omitempty"`
+	// outLog is pm2's stdout log for the process; it never leaves the helper.
+	outLog string
 }
 
 // jlistProc picks out the fields we use from pm2's process list. Everything
@@ -64,6 +72,7 @@ type jlistProc struct {
 		Uptime      int64  `json:"pm_uptime"`
 		Restarts    int    `json:"restart_time"`
 		Interpreter string `json:"exec_interpreter"`
+		OutLog      string `json:"pm_out_log_path"`
 	} `json:"pm2_env"`
 }
 
@@ -83,6 +92,7 @@ func ParseProcs(out []byte) ([]Proc, error) {
 			Started:  r.Env.Uptime,
 			Restarts: r.Env.Restarts,
 			Runtime:  runtimeName(r.Env.Interpreter),
+			outLog:   r.Env.OutLog,
 		}
 		if r.Monit != nil {
 			p.CPU, p.Mem = r.Monit.CPU, r.Monit.Memory

@@ -258,7 +258,9 @@ func newTestProvider(snap *Snapshot, err error) (*Provider, time.Time) {
 
 func TestList(t *testing.T) {
 	procs, _ := ParseProcs([]byte(jlist))
+	procs[0].Discord = "AftermathCoordinator#3579"
 	procs[1].Accounts = []string{"Manager", "Daryl"}
+	procs[1].Logins = map[string]string{"Manager": "Sigmabot1", "Ghost": "not-an-account"}
 	p, now := newTestProvider(&Snapshot{T: 1793616339109 - 4000, Procs: procs}, nil)
 	units, err := p.List(context.Background())
 	if err != nil {
@@ -270,18 +272,233 @@ func TestList(t *testing.T) {
 	u := units[0]
 	wantUp := int64(now.Sub(time.UnixMilli(1793574033265)) / time.Second)
 	if u.ID != "my-bot" || u.State != provider.StateRunning || u.Kind != "bot" || u.UptimeSec != wantUp ||
-		u.Meta["restarts"] != "2" || u.Meta["description"] != "node" || len(u.Actions) != 0 || *u.MemBytes != 95371264 {
+		u.Meta["restarts"] != "2" || u.Meta["description"] != "node" || *u.MemBytes != 95371264 ||
+		u.Meta["discord"] != "AftermathCoordinator#3579" || strings.Join(u.Actions, ",") != "restart,stop" {
 		t.Errorf("my-bot = %+v", u)
 	}
-	if units[1].Meta["accounts"] != "Manager\nDaryl" {
+	if units[1].Meta["accounts"] != "Manager\tSigmabot1\nDaryl" {
 		t.Errorf("accounts = %q", units[1].Meta["accounts"])
-	}
-	if p.Do(context.Background(), "my-bot", provider.ActionRestart) != provider.ErrBadAction {
-		t.Error("pm2 must stay view-only")
 	}
 	if _, err := p.Logs(context.Background(), "my-bot", 10); err == nil {
 		t.Error("logs should explain they aren't available")
 	}
+}
+
+func TestDo(t *testing.T) {
+	procs := []Proc{
+		{Name: "my-bot", ID: 0, Status: "online"},
+		{Name: "bot", ID: 3, Status: "online"},
+		{Name: "bot", ID: 4, Status: "stopped"},
+		{Name: "old-bot", ID: 5, Status: "online"},
+	}
+	p, _ := newTestProvider(&Snapshot{T: 1793616339109, Procs: procs}, nil)
+	var got []ControlRequest
+	p.send = func(_ context.Context, r ControlRequest) error { got = append(got, r); return nil }
+	ctx := context.Background()
+
+	for _, c := range []struct{ id, action string }{{"my-bot", "restart"}, {"bot-4", "start"}, {"bot-3", "stop"}} {
+		if err := p.Do(ctx, c.id, c.action); err != nil {
+			t.Errorf("%s %s: %v", c.action, c.id, err)
+		}
+	}
+	want := []ControlRequest{{"restart", 0, "my-bot"}, {"start", 4, "bot"}, {"stop", 3, "bot"}}
+	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Errorf("requests = %+v", got)
+	}
+	if err := p.Do(ctx, "my-bot", provider.ActionKill); err != provider.ErrBadAction {
+		t.Errorf("kill: %v", err)
+	}
+	if err := p.Do(ctx, "old-bot", "restart"); err != provider.ErrUnknownUnit {
+		t.Errorf("an excluded bot can't be controlled: %v", err)
+	}
+	if err := p.Do(ctx, "nope", "restart"); err != provider.ErrUnknownUnit {
+		t.Errorf("unknown: %v", err)
+	}
+	stale, _ := newTestProvider(&Snapshot{T: 1793616339109 - 120_000, Procs: procs}, nil)
+	stale.send = p.send
+	if err := stale.Do(ctx, "my-bot", "restart"); err == nil || len(got) != 3 {
+		t.Errorf("a stale snapshot must not send anything: %v", err)
+	}
+}
+
+func TestActions(t *testing.T) {
+	for state, want := range map[string]string{"running": "restart,stop", "starting": "stop", "restarting": "stop",
+		"stopping": "stop", "stopped": "start", "failed": "start", "unknown": ""} {
+		if got := strings.Join(Actions(state), ","); got != want {
+			t.Errorf("Actions(%s) = %q, want %q", state, got, want)
+		}
+	}
+}
+
+// Lines copied from the bots' pm2 logs on the server.
+func TestDiscordNames(t *testing.T) {
+	aftermath := "Refreshing 11 application command(s)...\nReady! Logged in as OldName#0001\nLoaded 2 active poll(s)\n" +
+		"\x1b[32mReady! Logged in as AftermathCoordinator#3579\x1b[39m\nLoaded 0 active giveaway(s)\n"
+	if self, logins := DiscordNames([]byte(aftermath)); self != "AftermathCoordinator#3579" || logins != nil {
+		t.Errorf("aftermath: %q %v", self, logins)
+	}
+	finco := "12:00:45   Manager is signed in as 'Sigmabot1' and can see 1 server(s)\n" +
+		"12:00:48 online: Michonne\n12:00:48   Michonne is signed in as 'michonne' and can see 1 server(s)\n" +
+		"12:00:53 mood: Carol calm -> bored (0.50): nobody has talked to you for 13 hours\n"
+	self, logins := DiscordNames([]byte(finco))
+	if self != "" || logins["Manager"] != "Sigmabot1" || logins["Michonne"] != "michonne" || len(logins) != 2 {
+		t.Errorf("fin-and-co: %q %v", self, logins)
+	}
+	if self, _ := DiscordNames([]byte("Ready! Logged in as Aftermath Coordinator#3579\n")); self != "Aftermath Coordinator#3579" {
+		t.Errorf("name with a space: %q", self)
+	}
+	if self, _ := DiscordNames([]byte("Logged in as newstylebot\n")); self != "newstylebot" {
+		t.Errorf("no discriminator: %q", self)
+	}
+	for line, want := range map[string]string{
+		"Logged in as newbot, watching #1234 channels": "newbot",
+		"Logged in as 'X' (guild #2024)":               "",
+		"Ready! Logged in as Some Bot#0420.":           "Some Bot#0420",
+		"Logged in as Bot#12345":                       "Bot#12345",
+	} {
+		if self, _ := DiscordNames([]byte(line + "\n")); self != want {
+			t.Errorf("%q -> %q, want %q", line, self, want)
+		}
+	}
+	if self, logins := DiscordNames([]byte("nothing here\n")); self != "" || logins != nil {
+		t.Errorf("noise: %q %v", self, logins)
+	}
+}
+
+func TestReadTailAndNameCache(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "out.log")
+	big := strings.Repeat("noise noise noise\n", 20000) + "Ready! Logged in as Bot#1\n"
+	os.WriteFile(path, []byte(big), 0o644)
+	tail, _, err := readTail(path, 1024)
+	if err != nil || len(tail) > 1024 || strings.HasPrefix(string(tail), "oise") || !strings.Contains(string(tail), "Bot#1") {
+		t.Fatalf("tail = %d bytes %q..., %v", len(tail), string(tail[:min(20, len(tail))]), err)
+	}
+	e := testExporter(t)
+	if self, _ := e.discordNames(path); self != "Bot#1" {
+		t.Errorf("self = %q", self)
+	}
+	// The login line scrolls out of the tail: the cached name stays.
+	os.WriteFile(path, []byte(strings.Repeat("chatter\n", 50000)), 0o644)
+	if self, _ := e.discordNames(path); self != "Bot#1" {
+		t.Errorf("name lost after the log moved on: %q", self)
+	}
+	if self, _ := e.discordNames(filepath.Join(t.TempDir(), "missing.log")); self != "" {
+		t.Errorf("missing log: %q", self)
+	}
+}
+
+func TestAct(t *testing.T) {
+	e := testExporter(t)
+	var calls []string
+	e.rpc = func(_ context.Context, method string, args ...any) ([]json.RawMessage, error) {
+		raw, _ := json.Marshal(args)
+		calls = append(calls, method+string(raw))
+		if method == "startProcessId" {
+			return nil, pm2Error("process already online")
+		}
+		return nil, nil
+	}
+	ctx := context.Background()
+	if err := e.act(ctx, ControlRequest{"restart", 0, "my-bot"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.act(ctx, ControlRequest{"stop", 1, "fin-and-co"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.act(ctx, ControlRequest{"start", 0, "my-bot"}); err == nil || err.Error() != "pm2 said: process already online" {
+		t.Errorf("pm2 refusal: %v", err)
+	}
+	want := `restartProcessId[{"env":{},"id":0}]|stopProcessId[1]|startProcessId[0]`
+	if got := strings.Join(calls, "|"); got != want {
+		t.Errorf("calls = %s\nwant    %s", got, want)
+	}
+	// The id must still belong to the same name, and only known actions run.
+	for _, bad := range []ControlRequest{{"restart", 1, "my-bot"}, {"restart", 9, "ghost"}, {"kill", 0, "my-bot"}, {"delete", 0, "my-bot"}} {
+		if err := e.act(ctx, bad); err == nil {
+			t.Errorf("%+v should be refused", bad)
+		}
+	}
+	if len(calls) != 3 {
+		t.Errorf("a refused request reached pm2: %v", calls)
+	}
+	// While one action runs, the next is refused right away, not queued.
+	e.actMu.Lock()
+	err := e.act(ctx, ControlRequest{"restart", 0, "my-bot"})
+	e.actMu.Unlock()
+	if err == nil || !strings.Contains(err.Error(), "still running") || len(calls) != 3 {
+		t.Errorf("busy: %v, calls %v", err, calls)
+	}
+}
+
+func TestTakeLoginsOnlyForAccounts(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "fin-and-co-out.log")
+	os.WriteFile(log, []byte("12:00:45   Manager is signed in as 'Sigmabot1' and can see 1 server(s)\n"+
+		"<someone in chat> Hacker is signed in as 'evil'\n"), 0o644)
+	list := `[{"name":"fin-and-co","pm_id":1,"pm2_env":{"status":"online","pm_out_log_path":` +
+		strconvQuote(log) + `}}]`
+	e := testExporter(t)
+	e.list = func(context.Context) ([]byte, error) { return []byte(list), nil }
+	e.readFile = func(string) ([]byte, error) { return []byte(botsJSON), nil }
+	e.names[filepath.Join(dir, "gone.log")] = nameCache{self: "old"}
+	snap := e.Take(context.Background())
+	got := snap.Procs[0].Logins
+	if len(got) != 1 || got["Manager"] != "Sigmabot1" {
+		t.Errorf("logins = %v, want only accounts from bots.json", got)
+	}
+	if _, ok := e.names[filepath.Join(dir, "gone.log")]; ok {
+		t.Error("cache keeps logs of processes that are gone")
+	}
+}
+
+func strconvQuote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func TestControlSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix socket file modes are a Linux thing; runs on the server")
+	}
+	e := testExporter(t)
+	var gotMethod string
+	e.rpc = func(_ context.Context, method string, _ ...any) ([]json.RawMessage, error) {
+		gotMethod = method
+		return nil, nil
+	}
+	sock := filepath.Join(t.TempDir(), "control.sock")
+	ln, err := listenControl(sock, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.serveControl(ctx, ln)
+	if st, err := os.Stat(sock); err != nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("socket mode = %v, %v", st.Mode(), err)
+	}
+	if err := SendControl(ctx, sock, ControlRequest{"restart", 0, "my-bot"}); err != nil || gotMethod != "restartProcessId" {
+		t.Errorf("restart: %v (%s)", err, gotMethod)
+	}
+	if err := SendControl(ctx, sock, ControlRequest{"restart", 1, "my-bot"}); err == nil || !strings.Contains(err.Error(), "isn't in pm2") {
+		t.Errorf("mismatch: %v", err)
+	}
+	select {
+	case <-e.kick:
+	default:
+		t.Error("an action should ask for a fresh snapshot")
+	}
+	if err := SendControl(ctx, filepath.Join(t.TempDir(), "none.sock"), ControlRequest{"restart", 0, "my-bot"}); err == nil ||
+		!strings.Contains(err.Error(), "isn't taking actions") {
+		t.Errorf("no helper: %v", err)
+	}
+	// A crash leaves the socket file behind; the next start must still work.
+	cancel()
+	ln2, err := listenControl(sock, "")
+	if err != nil {
+		t.Fatalf("restart over a stale socket: %v", err)
+	}
+	ln2.Close()
 }
 
 func TestListProblems(t *testing.T) {

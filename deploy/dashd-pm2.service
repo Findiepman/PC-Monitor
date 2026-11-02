@@ -2,9 +2,13 @@
 #
 # Feeds the "Discord bots" page. dashd can't ask pm2 itself (pm2 belongs to
 # your user and dashd's sandbox keeps it out of /home), so this runs as the
-# pm2 user, asks the running pm2 daemon over ~/.pm2/rpc.sock (it never starts
-# pm2 itself) and writes a filtered list to /run/pm2-status/pm2.json every 10
-# seconds: name, status, uptime, CPU, memory, restarts and bot account names.
+# pm2 user and talks to the running pm2 daemon over ~/.pm2/rpc.sock (it never
+# starts pm2 itself). Every 10 seconds it writes a filtered list to
+# /run/pm2-status/pm2.json: name, status, uptime, CPU, memory, restarts, bot
+# account names and the Discord names the bots log in as (read from their pm2
+# logs). The dashboard's Start/Restart/Stop buttons reach it through
+# /run/pm2-status/control.sock, which only the dashd user can use (an ACL
+# entry; no group membership needed).
 # Environments and tokens never leave this process.
 #
 # If pm2 runs under another user, change `fin` in all five places: After=,
@@ -12,7 +16,7 @@
 # flag lists the keys of that bots.json as the accounts a process signs in;
 # drop it or add more (one -accounts per process).
 [Unit]
-Description=dashd pm2 exporter (Discord bot list)
+Description=dashd pm2 helper (Discord bot list and start/stop/restart)
 After=pm2-fin.service
 
 [Service]
