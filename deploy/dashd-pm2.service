@@ -1,0 +1,49 @@
+# /etc/systemd/system/dashd-pm2.service
+#
+# Feeds the "Discord bots" page. dashd can't ask pm2 itself (pm2 belongs to
+# your user and dashd's sandbox keeps it out of /home), so this runs as the
+# pm2 user, asks the running pm2 daemon over ~/.pm2/rpc.sock (it never starts
+# pm2 itself) and writes a filtered list to /run/pm2-status/pm2.json every 10
+# seconds: name, status, uptime, CPU, memory, restarts and bot account names.
+# Environments and tokens never leave this process.
+#
+# If pm2 runs under another user, change `fin` in all five places: After=,
+# User=, Group=, PM2_HOME and the bots.json path. The -accounts
+# flag lists the keys of that bots.json as the accounts a process signs in;
+# drop it or add more (one -accounts per process).
+[Unit]
+Description=dashd pm2 exporter (Discord bot list)
+After=pm2-fin.service
+
+[Service]
+User=fin
+Group=fin
+Environment=PM2_HOME=/home/fin/.pm2
+ExecStart=/usr/local/bin/dashd pm2-export -out /run/pm2-status/pm2.json -accounts fin-and-co=/home/fin/fin-and-co/bots.json
+# /run/pm2-status, readable by dashd. systemd removes it when this stops, so
+# the page then says the exporter isn't running instead of showing old data.
+# A restart keeps it, so updates don't flash an error on the page.
+RuntimeDirectory=pm2-status
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=restart
+Restart=always
+RestartSec=5
+# Keep it out of the bots' way.
+Nice=10
+MemoryMax=128M
+
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+# Only the unix socket to pm2 is needed.
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

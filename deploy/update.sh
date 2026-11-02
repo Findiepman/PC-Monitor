@@ -21,5 +21,7 @@ echo "==> Building dashd"
 echo "==> Installing and restarting"
 install -m 755 bin/dashd /usr/local/bin/dashd
 systemctl restart dashd
+# The bot-list exporter runs the same binary; restart it only if it's set up.
+systemctl try-restart dashd-pm2 2>/dev/null || true
 sleep 2
 systemctl --no-pager --lines=5 status dashd

@@ -8,11 +8,21 @@
 
   let {
     open = $bindable(false),
+    skip,
+    view = 'home',
+    botsLabel,
+    onview,
     onlogs,
     onaction,
     onsignout,
   }: {
     open: boolean;
+    /** Provider whose units get no commands (they live on their own page). */
+    skip?: string;
+    view?: 'home' | 'bots';
+    /** Set when the bots page exists. */
+    botsLabel?: string;
+    onview?: (v: 'home' | 'bots') => void;
     onlogs: (u: Unit) => void;
     onaction: (u: Unit, a: Action) => void;
     onsignout: () => void;
@@ -31,7 +41,14 @@
 
   let commands = $derived.by<Command[]>(() => {
     const out: Command[] = [];
+    if (onview && botsLabel && view !== 'bots') {
+      out.push({ key: 'view:bots', label: `Open ${botsLabel}`, destructive: false, run: () => onview('bots') });
+    }
+    if (onview && view !== 'home') {
+      out.push({ key: 'view:home', label: 'Open dashboard', destructive: false, run: () => onview('home') });
+    }
     for (const u of live.units) {
+      if (u.provider === skip) continue;
       out.push({ key: `${u.id}:logs`, label: `Show logs for ${u.name}`, unit: u, destructive: false, run: () => onlogs(u) });
       for (const a of u.actions) {
         out.push({

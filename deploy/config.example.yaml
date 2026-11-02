@@ -43,6 +43,14 @@ providers:
     api_key: env:DASHD_PTERODACTYL_KEY
     all_servers: false   # true lists every server, needs a root admin key
 
+  # Discord bots (anything pm2 runs), on their own "Discord bots" page.
+  # View-only: no start/stop buttons. dashd can't reach pm2 itself, so
+  # deploy/dashd-pm2.service writes the list to `path` as the pm2 user.
+  pm2:
+    label: Discord bots
+    path: /run/pm2-status/pm2.json
+    exclude: []   # pm2 names to hide, for apps that aren't bots
+
 # One-line description shown on each service tile ("what is it, what does it
 # do"). dashd already knows common services (wings, playit, pteroq,
 # cloudflared, nginx, the Pterodactyl panel, MariaDB/MySQL, Postgres, Redis,

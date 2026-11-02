@@ -4,6 +4,7 @@ package mock
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -11,7 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/findiepman/dashd/internal/config"
 	"github.com/findiepman/dashd/internal/provider"
+	"github.com/findiepman/dashd/internal/providers/pm2"
 )
 
 type unit struct {
@@ -33,7 +36,7 @@ type Provider struct {
 	units       []*unit
 }
 
-// Set returns mock stand-ins for the docker, pterodactyl and systemd
+// Set returns mock stand-ins for the docker, pterodactyl, systemd and pm2
 // providers, already generating log output.
 func Set(ctx context.Context) []provider.Provider {
 	const mb = 1 << 20
@@ -72,7 +75,27 @@ func Set(ctx context.Context) []provider.Provider {
 	for _, p := range all {
 		go p.run(ctx)
 	}
-	return []provider.Provider{docker, ptero, systemd}
+	return []provider.Provider{docker, ptero, systemd, mockPM2()}
+}
+
+// mockPM2 runs the real pm2 provider on a made-up snapshot, so mock mode
+// exercises the same code as the server.
+func mockPM2() provider.Provider {
+	const mb = 1 << 20
+	boot := time.Now().Add(-26 * time.Hour)
+	return pm2.NewWithReader(config.PM2{Label: "Discord bots", Path: "(mock)"}, func() ([]byte, error) {
+		now := time.Now()
+		cpu := func(base float64) *float64 { return provider.Ptr(base * (0.7 + rand.Float64()*0.6)) }
+		snap := pm2.Snapshot{T: now.UnixMilli(), Procs: []pm2.Proc{
+			{Name: "my-bot", ID: 0, Status: "online", Started: boot.Add(3 * time.Hour).UnixMilli(),
+				CPU: cpu(0.3), Mem: provider.Ptr(uint64(91 * mb)), Restarts: 2, Runtime: "node"},
+			{Name: "fin-and-co", ID: 1, Status: "online", Started: boot.UnixMilli(),
+				CPU: cpu(0.2), Mem: provider.Ptr(uint64(54 * mb)), Runtime: "python",
+				Accounts: []string{"Manager", "Daryl", "Michonne", "Glenn", "Shane", "Carol", "Carl", "Negan"}},
+			{Name: "old-music-bot", ID: 2, Status: "stopped", Restarts: 14, Runtime: "node"},
+		}}
+		return json.Marshal(snap)
+	})
 }
 
 func newProvider(name, label string, units []*unit) *Provider {

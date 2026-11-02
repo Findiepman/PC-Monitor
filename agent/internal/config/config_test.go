@@ -110,3 +110,21 @@ about:
 		t.Errorf("empty value should be kept to hide a description: %v", c.About)
 	}
 }
+
+func TestPM2(t *testing.T) {
+	c, err := Parse([]byte(base + `
+providers:
+  pm2: {}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.Providers.PM2
+	if p.Label != "Discord bots" || p.Path != "/run/pm2-status/pm2.json" {
+		t.Errorf("pm2 defaults = %+v", p)
+	}
+	c, err = Parse([]byte(base))
+	if err != nil || c.Providers.PM2 != nil {
+		t.Fatalf("pm2 should stay disabled without a block: %v", err)
+	}
+}

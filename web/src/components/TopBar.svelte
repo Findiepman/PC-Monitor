@@ -6,9 +6,19 @@
 
   let {
     hostname,
+    view = 'home',
+    showBots = false,
+    botsLabel = 'Discord bots',
     onpalette,
     onsignout,
-  }: { hostname: string; onpalette: () => void; onsignout: () => void } = $props();
+  }: {
+    hostname: string;
+    view?: 'home' | 'bots';
+    showBots?: boolean;
+    botsLabel?: string;
+    onpalette: () => void;
+    onsignout: () => void;
+  } = $props();
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
   let dark = $state(currentTheme() === 'dark');
@@ -23,6 +33,13 @@
     <Led tone={live.status === 'live' ? 'ok' : 'warn'} pulse={live.status !== 'live'} />
     <span>{live.status === 'live' ? 'Live' : live.status === 'connecting' ? 'Connecting' : 'Reconnecting'}</span>
   </span>
+
+  {#if showBots || view === 'bots'}
+    <nav class="tabs" aria-label="Pages">
+      <a href="#/" aria-current={view === 'home' ? 'page' : undefined}>Dashboard</a>
+      <a href="#/bots" aria-current={view === 'bots' ? 'page' : undefined} title={botsLabel}><span>{botsLabel}</span></a>
+    </nav>
+  {/if}
 
   <span class="grow"></span>
 
@@ -121,6 +138,46 @@
     color: var(--fg);
   }
 
+  .tabs {
+    display: inline-flex;
+    gap: 6px;
+    padding: 3px;
+    border: 3px solid var(--edge);
+    border-radius: 14px;
+    background: var(--card);
+  }
+
+  .tabs a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 0 12px;
+    border: 2.5px solid transparent;
+    border-radius: 10px;
+    color: var(--fg);
+    font-size: var(--fs-s);
+    font-weight: 800;
+    min-width: 0;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .tabs a span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tabs a:hover {
+    border-color: var(--edge);
+  }
+
+  .tabs a[aria-current='page'] {
+    border-color: #111;
+    background: var(--mint);
+    color: #111;
+    box-shadow: 2px 2px 0 #111;
+  }
+
   .palette {
     min-width: 200px;
     justify-content: flex-start;
@@ -137,6 +194,17 @@
   @media (max-width: 560px) {
     .grow {
       display: none;
+    }
+
+    .tabs {
+      order: 10;
+      flex: 1 1 100%;
+      min-width: 0;
+    }
+
+    .tabs a {
+      flex: 1;
+      justify-content: center;
     }
 
     .palette {

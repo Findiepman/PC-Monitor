@@ -235,6 +235,38 @@ If it isn't running, `journalctl -u dashd -n 30 --no-pager` shows why. The error
 
 ---
 
+## Step 8b. Show your Discord bots (pm2) 🐧 Server
+
+Skip this if you don't run bots with pm2. The **Discord bots** page lists everything pm2 runs (view-only). dashd can't look inside your home folder, so a small helper runs as your user and writes the list to `/run/pm2-status/pm2.json`.
+
+```bash
+nano ~/dashd/deploy/dashd-pm2.service
+```
+
+If pm2 runs under a user other than `fin`, change `fin` everywhere in that file. The `-accounts fin-and-co=...` part shows the bot names from Fin & Co's `bots.json` (only the names, never the tokens); remove it if you don't have that. Then:
+
+```bash
+sudo cp ~/dashd/deploy/dashd-pm2.service /etc/systemd/system/dashd-pm2.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now dashd-pm2
+```
+
+✅ **Check:** `cat /run/pm2-status/pm2.json` prints your bots with `"status":"online"`.
+
+Now turn the page on. Open `sudo nano /etc/dashd/config.yaml` and add this under `providers:` (2 spaces before `pm2:`):
+
+```yaml
+  pm2: {}
+```
+
+```bash
+sudo systemctl restart dashd
+```
+
+✅ **Check:** the dashboard's top bar now has a **Discord bots** tab.
+
+---
+
 ## Step 9. Put it on dash.findiepman.dev (Cloudflare website)
 
 **If you don't have a Cloudflare Tunnel yet:**
@@ -338,6 +370,8 @@ You stay signed in during updates.
 | Login code is always "wrong" | Server clock is off. Run `sudo timedatectl set-ntp true`, wait a minute, then check that `timedatectl` says synchronized. |
 | Signed out after every reboot | Run `sudo ls -l /var/lib/dashd/`. If `sessions.json` isn't there, check `journalctl -u dashd` for "could not save sessions". |
 | Docker section says "socket not reachable" | Docker isn't running: `sudo systemctl start docker`. |
+| Discord bots page says "no pm2 snapshot" or "snapshot is … old" | The helper isn't running: `systemctl status dashd-pm2 --no-pager`, then `journalctl -u dashd-pm2 -n 20 --no-pager`. |
+| Discord bots page says "pm2 isn't running" | Start pm2: `sudo systemctl start pm2-fin`. |
 | Restarting a service says "Interactive authentication required" | The name in `/etc/polkit-1/rules.d/50-dashd.rules` doesn't match step 6b. Fix it, then run `sudo systemctl restart polkit`. |
 | Pterodactyl section says the key was rejected | You made an **application** key (`ptla_`). Make a **client** key (`ptlc_`) under your account's API Credentials. |
 | Cloudflare error page (502) | dashd isn't running (step 8 check), or the tunnel URL isn't exactly `127.0.0.1:7070`. |

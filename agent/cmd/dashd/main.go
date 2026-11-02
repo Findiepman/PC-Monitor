@@ -29,6 +29,7 @@ import (
 	"github.com/findiepman/dashd/internal/provider"
 	"github.com/findiepman/dashd/internal/providers/docker"
 	"github.com/findiepman/dashd/internal/providers/mock"
+	"github.com/findiepman/dashd/internal/providers/pm2"
 	"github.com/findiepman/dashd/internal/providers/pterodactyl"
 	"github.com/findiepman/dashd/internal/providers/systemd"
 	"github.com/findiepman/dashd/internal/webui"
@@ -41,6 +42,8 @@ Usage:
   dashd init [-o path] [-mock]     create a config with a new login and TOTP secret
   dashd hash-password              hash a password for auth.password_hash
   dashd totp-code -secret S        print the current code for a secret (for testing)
+  dashd pm2-export [-out path]     run as the pm2 user: write the bot list dashd shows
+                                   (see deploy/dashd-pm2.service)
 `
 
 func main() {
@@ -59,6 +62,8 @@ func main() {
 		err = hashPassword()
 	case "totp-code":
 		err = totpCode(args)
+	case "pm2-export":
+		err = pm2Export(args)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
@@ -109,6 +114,9 @@ func serve(args []string) error {
 		}
 		if c := cfg.Providers.Systemd; c != nil {
 			must(reg.Add(systemd.New(*c)))
+		}
+		if c := cfg.Providers.PM2; c != nil {
+			must(reg.Add(pm2.New(*c)))
 		}
 	}
 
@@ -191,6 +199,40 @@ func hashPassword() error {
 	return nil
 }
 
+// accountFlags collects repeated -accounts name=path flags.
+type accountFlags map[string]string
+
+func (a accountFlags) String() string { return "" }
+
+func (a accountFlags) Set(v string) error {
+	name, path, ok := strings.Cut(v, "=")
+	if !ok || strings.TrimSpace(name) == "" || strings.TrimSpace(path) == "" {
+		return fmt.Errorf("want <pm2 name>=<path to bots.json>, got %q", v)
+	}
+	a[strings.TrimSpace(name)] = strings.TrimSpace(path)
+	return nil
+}
+
+func pm2Export(args []string) error {
+	fs := flag.NewFlagSet("pm2-export", flag.ExitOnError)
+	out := fs.String("out", "/run/pm2-status/pm2.json", "snapshot file dashd reads")
+	every := fs.Duration("every", 10*time.Second, "how often to ask pm2")
+	home := fs.String("pm2-home", "", "PM2_HOME (default $PM2_HOME or ~/.pm2)")
+	accounts := accountFlags{}
+	fs.Var(accounts, "accounts", "<pm2 name>=<bots.json>: list that file's top-level keys as the process's bot accounts (repeatable)")
+	fs.Parse(args)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return pm2.NewExporter(pm2.ExportOptions{
+		Out:      *out,
+		Every:    *every,
+		Home:     *home,
+		Accounts: accounts,
+		Log:      slog.New(slog.NewTextHandler(os.Stderr, nil)),
+	}).Run(ctx)
+}
+
 func totpCode(args []string) error {
 	fs := flag.NewFlagSet("totp-code", flag.ExitOnError)
 	secret := fs.String("secret", "", "base32 TOTP secret")
@@ -269,6 +311,10 @@ providers:
   # pterodactyl:
   #   url: https://panel.findiepman.dev
   #   api_key: env:DASHD_PTERODACTYL_KEY
+
+  # Discord bots run by pm2, read-only. Needs deploy/dashd-pm2.service
+  # running first (see DEPLOY.md), then remove the # in front of this line.
+  # pm2: {}
 `)
 	}
 	if err := os.WriteFile(*out, []byte(b.String()), 0o600); err != nil {

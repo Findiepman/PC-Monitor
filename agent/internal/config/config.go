@@ -54,6 +54,7 @@ type Providers struct {
 	Docker      *Docker      `yaml:"docker"`
 	Systemd     *Systemd     `yaml:"systemd"`
 	Pterodactyl *Pterodactyl `yaml:"pterodactyl"`
+	PM2         *PM2         `yaml:"pm2"`
 }
 
 type Docker struct {
@@ -83,6 +84,16 @@ type Pterodactyl struct {
 	// AllServers lists every server on the panel instead of only the ones
 	// the key's account owns. Requires an admin account.
 	AllServers bool `yaml:"all_servers"`
+}
+
+// PM2 shows the processes pm2 runs (the Discord bots), read-only. dashd reads
+// the snapshot that `dashd pm2-export` writes (deploy/dashd-pm2.service).
+type PM2 struct {
+	Label string `yaml:"label"`
+	// Path is the snapshot file the exporter writes.
+	Path string `yaml:"path"`
+	// Exclude hides processes by name, for pm2 apps that aren't bots.
+	Exclude []string `yaml:"exclude"`
 }
 
 func Load(path string) (*Config, error) {
@@ -163,6 +174,14 @@ func (c *Config) normalize() error {
 			if !strings.Contains(u, ".") {
 				s.Units[i] = u + ".service"
 			}
+		}
+	}
+	if p := c.Providers.PM2; p != nil {
+		if p.Label == "" {
+			p.Label = "Discord bots"
+		}
+		if p.Path == "" {
+			p.Path = "/run/pm2-status/pm2.json"
 		}
 	}
 	if p := c.Providers.Pterodactyl; p != nil {

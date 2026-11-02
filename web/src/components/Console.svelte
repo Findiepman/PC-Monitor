@@ -12,10 +12,16 @@
   import Activity from './Activity.svelte';
   import Palette from './Palette.svelte';
   import Notices from './Notices.svelte';
+  import Bots from './Bots.svelte';
 
   let { onsignout }: { onsignout: () => void } = $props();
 
   const SELECTED_KEY = 'dashd:selected';
+  // The pm2 provider gets its own page instead of a group in the rack.
+  const BOTS = 'pm2';
+
+  type View = 'home' | 'bots';
+  const readView = (): View => (location.hash === '#/bots' ? 'bots' : 'home');
 
   let meta = $state<Meta>({ hostname: '', providers: [] });
   let selectedId = $state<string | undefined>(readSelected());
@@ -27,9 +33,12 @@
   let armed = $state<{ id: string; action: Action } | null>(null);
   let filterInput = $state<HTMLInputElement>();
   let narrow = $state(false);
+  let view = $state<View>(readView());
 
+  let botsProvider = $derived(meta.providers.find((p) => p.name === BOTS));
+  let rackProviders = $derived(meta.providers.filter((p) => p.name !== BOTS));
   // Units in the order they appear on screen, grouped by provider.
-  let ordered = $derived(meta.providers.flatMap((p) => live.units.filter((u) => u.provider === p.name)));
+  let ordered = $derived(rackProviders.flatMap((p) => live.units.filter((u) => u.provider === p.name)));
   let selected = $derived(ordered.find((u) => u.id === selectedId));
   // j and k only walk the units the provider filter leaves on screen.
   let onscreen = $derived(pfilter === 'all' ? ordered : ordered.filter((u) => u.provider === pfilter));
@@ -57,8 +66,23 @@
   });
 
   $effect(() => {
-    document.title = meta.hostname ? `${meta.hostname} dashboard` : 'dashd';
+    const what = view === 'bots' ? 'bots' : 'dashboard';
+    document.title = meta.hostname ? `${meta.hostname} ${what}` : 'dashd';
   });
+
+  // Switching pages from the palette or from the tabs/Back (via hashchange).
+  function show(v: View) {
+    view = v;
+    armed = null;
+    sheetOpen = false;
+    window.scrollTo({ top: 0 });
+  }
+
+  function go(v: View) {
+    if (v === view) return;
+    location.hash = v === 'bots' ? '#/bots' : '#/';
+    show(v);
+  }
 
   onMount(() => {
     live.connect();
@@ -75,9 +99,16 @@
     narrow = mq.matches;
     const onMq = () => (narrow = mq.matches);
     mq.addEventListener('change', onMq);
+    const onHash = () => {
+      // go() already switched; only Back/Forward or a typed URL gets here with news.
+      const v = readView();
+      if (v !== view) show(v);
+    };
+    window.addEventListener('hashchange', onHash);
     return () => {
       live.close();
       mq.removeEventListener('change', onMq);
+      window.removeEventListener('hashchange', onHash);
     };
   });
 
@@ -154,6 +185,8 @@
       return;
     }
     if (paletteOpen || e.metaKey || e.ctrlKey || e.altKey) return;
+    // The unit keys only act on the rack, which the bots page doesn't show.
+    if (view !== 'home') return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, [contenteditable]')) return;
 
@@ -189,46 +222,65 @@
 <svelte:window {onkeydown} />
 
 <div class="console">
-  <TopBar hostname={meta.hostname} onpalette={() => (paletteOpen = true)} onsignout={signOut} />
+  <TopBar
+    hostname={meta.hostname}
+    {view}
+    showBots={!!botsProvider}
+    botsLabel={botsProvider?.label}
+    onpalette={() => (paletteOpen = true)}
+    onsignout={signOut}
+  />
 
-  <main class="bento">
-    <HostTrace />
+  {#if view === 'bots'}
+    <Bots provider={botsProvider} {metaState} />
+  {:else}
+    <main class="bento">
+      <HostTrace />
 
-    <Rack
-      providers={meta.providers}
-      {metaState}
-      {selectedId}
-      {pending}
-      {armed}
-      bind:filter={pfilter}
-      onselect={(u) => select(u)}
-      onaction={run}
-    />
+      <Rack
+        providers={rackProviders}
+        botsElsewhere={!!botsProvider}
+        {metaState}
+        {selectedId}
+        {pending}
+        {armed}
+        bind:filter={pfilter}
+        onselect={(u) => select(u)}
+        onaction={run}
+      />
 
-    <Activity />
+      <Activity />
 
-    {#if !narrow}
-      <LogPane unit={selected} bind:filterInput />
-    {:else}
-      <section class="tile tile-lilac t-logs" aria-labelledby="h-logs">
-        <header class="th"><h2 id="h-logs">Logs</h2></header>
-        {#if selected}
-          <p class="sub"><b>{selected.name}</b> is selected.</p>
-          <button class="btn" onclick={() => (sheetOpen = true)}>Open logs</button>
-        {:else}
-          <p class="sub">Pick a service to follow its logs.</p>
+      {#if !narrow}
+        <LogPane unit={selected} bind:filterInput />
+      {:else}
+        <section class="tile tile-lilac t-logs" aria-labelledby="h-logs">
+          <header class="th"><h2 id="h-logs">Logs</h2></header>
+          {#if selected}
+            <p class="sub"><b>{selected.name}</b> is selected.</p>
+            <button class="btn" onclick={() => (sheetOpen = true)}>Open logs</button>
+          {:else}
+            <p class="sub">Pick a service to follow its logs.</p>
+          {/if}
+        </section>
+        {#if sheetOpen && selected}
+          <LogPane unit={selected} sheet onclose={() => (sheetOpen = false)} bind:filterInput />
         {/if}
-      </section>
-      {#if sheetOpen && selected}
-        <LogPane unit={selected} sheet onclose={() => (sheetOpen = false)} bind:filterInput />
       {/if}
-    {/if}
-  </main>
+    </main>
+  {/if}
 </div>
 
 <Palette
   bind:open={paletteOpen}
-  onlogs={(u) => showLogs(u)}
+  skip={BOTS}
+  {view}
+  botsLabel={botsProvider?.label}
+  onview={go}
+  onlogs={(u) => {
+    go('home');
+    showLogs(u);
+  }}
   onaction={run}
   onsignout={signOut}
 />

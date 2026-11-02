@@ -11,6 +11,7 @@
     pending,
     armed,
     filter = $bindable('all'),
+    botsElsewhere = false,
     onselect,
     onaction,
   }: {
@@ -20,13 +21,15 @@
     pending: Record<string, Action>;
     armed: { id: string; action: Action } | null;
     filter?: string;
+    /** The pm2 bots are configured but shown on their own page. */
+    botsElsewhere?: boolean;
     onselect: (u: Unit) => void;
     onaction: (u: Unit, a: Action) => void;
   } = $props();
 
-  let groups = $derived(
-    providers.map((p) => ({ ...p, units: live.units.filter((u) => u.provider === p.name) })),
-  );
+  // Only the units of the providers shown here; others have their own page.
+  let units = $derived(live.units.filter((u) => providers.some((p) => p.name === u.provider)));
+  let groups = $derived(providers.map((p) => ({ ...p, units: units.filter((u) => u.provider === p.name) })));
   let shown = $derived(filter === 'all' ? groups : groups.filter((g) => g.name === filter));
 
   // A provider that disappears from the config can't stay selected as a filter.
@@ -35,12 +38,12 @@
   });
 
   let loading = $derived(
-    metaState === 'loading' || (live.status !== 'live' && live.units.length === 0 && metaState !== 'failed'),
+    metaState === 'loading' || (live.status !== 'live' && units.length === 0 && metaState !== 'failed'),
   );
 
   let summary = $derived.by(() => {
     const c = { running: 0, problem: 0, stopped: 0 };
-    for (const u of live.units) {
+    for (const u of units) {
       const t = tone(u);
       if (t === 'fail') c.problem++;
       else if (u.state === 'running') c.running++;
@@ -56,13 +59,13 @@
 <section class="tile t-units" aria-labelledby="h-units">
   <header class="th">
     <h2 id="h-units">Services</h2>
-    {#if live.units.length}<span class="summary pill plain">{summary}</span>{/if}
+    {#if units.length}<span class="summary pill plain">{summary}</span>{/if}
   </header>
 
   {#if providers.length > 1}
     <div class="filters" role="group" aria-label="Filter by provider">
       <button class="chipbtn" aria-pressed={filter === 'all'} onclick={() => (filter = 'all')}>
-        All<b>{live.units.length}</b>
+        All<b>{units.length}</b>
       </button>
       {#each groups as g (g.name)}
         <button class="chipbtn" aria-pressed={filter === g.name} onclick={() => (filter = g.name)}>
@@ -84,6 +87,8 @@
     </div>
   {:else if metaState === 'failed' && providers.length === 0}
     <div class="empty" role="alert"><b>Couldn't load the service list</b><p>Reload the page to try again.</p></div>
+  {:else if providers.length === 0 && botsElsewhere}
+    <div class="empty"><b>No services here</b><p>Your bots are on the Discord bots tab at the top.</p></div>
   {:else if providers.length === 0}
     <div class="empty"><b>No providers configured</b><p>Add a provider in the dashd config and its services will show up here.</p></div>
   {/if}
